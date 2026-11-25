@@ -77,6 +77,10 @@ export default function RoomsPanel() {
     return () => { void supabase.removeChannel(channel); };
   }, [activeRoom, loadMembers, loadRooms, supabase]);
 
+  const notifyRoomPlayback = (roomId: string | null) => {
+    window.dispatchEvent(new CustomEvent("lnmusik:room", { detail: { roomId } }));
+  };
+
   const saveName = (value: string) => {
     setDisplayName(value);
     window.localStorage.setItem("lnmusik-listener-name", value);
@@ -93,7 +97,7 @@ export default function RoomsPanel() {
       const created = Array.isArray(data) ? data[0] : data;
       if (created?.room_id) {
         const { data: room } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", created.room_id).single();
-        if (room) { setActiveRoom(room); setMessage("Room berhasil dibuat. Bagikan kode undangan ke temanmu."); setRoomName(""); }
+        if (room) { setActiveRoom(room); notifyRoomPlayback(room.id); setMessage("Room berhasil dibuat. Bagikan kode undangan ke temanmu."); setRoomName(""); }
       }
       await loadRooms();
     }
@@ -110,7 +114,7 @@ export default function RoomsPanel() {
     else if (joinedId) {
       const { data: room, error: roomError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", joinedId).single();
       if (roomError) setError(roomError.message);
-      else if (room) { setActiveRoom(room); setMessage("Berhasil bergabung ke room."); setRoomCode(""); }
+      else if (room) { setActiveRoom(room); notifyRoomPlayback(room.id); setMessage("Berhasil bergabung ke room."); setRoomCode(""); }
     }
     setBusy(false);
   };
@@ -119,7 +123,7 @@ export default function RoomsPanel() {
     if (!activeRoom || !userId || !supabase) return;
     const { error: leaveError } = await supabase.from("room_members").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
     if (leaveError) setError(leaveError.message);
-    else { setActiveRoom(null); setMembers([]); setMessage("Kamu sudah keluar dari room."); await loadRooms(); }
+    else { setActiveRoom(null); notifyRoomPlayback(null); setMembers([]); setMessage("Kamu sudah keluar dari room."); await loadRooms(); }
   };
 
   const copyCode = async () => {
