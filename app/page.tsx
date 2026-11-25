@@ -3,6 +3,9 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import RoomsPanel from "@/components/rooms-panel";
+import HomeHero, { type ChartRegion, type Track } from "@/components/home-hero";
+import TrackList from "@/components/track-list";
+import { useLibrary } from "@/lib/use-library";
 import {
   AudioLines, Home, Compass, Radio, Library, Download, Search, Bell, Plus,
   Play, Pause, SkipBack, SkipForward, Heart, ListMusic, Headphones, Users,
@@ -10,7 +13,6 @@ import {
 } from "lucide-react";
 
 type Tab = "Home" | "Explore" | "Rooms" | "Library" | "Offline";
-type Track = { videoId: string; title: string; channelTitle: string; thumbnail: string };
 type RoomPlaybackEvent = { action: "track"; track: Track } | { action: "play" } | { action: "pause" } | { action: "seek"; seconds: number };
 type RoomQueueRow = { id: string; video_id: string; title: string; channel_title: string; thumbnail: string; position: number };
 
@@ -23,10 +25,23 @@ const navItems = [
 ];
 
 const mixes = [
-  { title: "Your Daily Mix", subtitle: "Pilihan musik untuk hari ini", tone: "" },
-  { title: "Indonesian Indie", subtitle: "Musisi pilihan Indonesia", tone: "alt-1" },
-  { title: "After Hours", subtitle: "Temani malam lebih tenang", tone: "alt-2" },
-  { title: "The New Wave", subtitle: "Temukan suara baru", tone: "alt-3" }
+  { title: "Pop Indonesia", subtitle: "Lagu pop Indonesia terbaru", query: "lagu pop indonesia terbaru", tone: "" },
+  { title: "Indonesian Indie", subtitle: "Musisi indie pilihan", query: "indie indonesia terbaik", tone: "alt-1" },
+  { title: "After Hours", subtitle: "Temani malam lebih tenang", query: "lagu santai malam chill", tone: "alt-2" },
+  { title: "The New Wave", subtitle: "Rilisan global terbaru", query: "new music this week official audio", tone: "alt-3" }
+];
+
+const genres = [
+  { label: "Pop", query: "pop hits terbaru" },
+  { label: "Dangdut", query: "dangdut terbaru" },
+  { label: "Indie", query: "indie indonesia" },
+  { label: "K-Pop", query: "kpop official mv" },
+  { label: "Hip Hop", query: "hip hop hits" },
+  { label: "R&B", query: "rnb hits" },
+  { label: "Rock", query: "rock indonesia" },
+  { label: "Galau", query: "lagu galau indonesia" },
+  { label: "Lo-fi", query: "lofi chill beats" },
+  { label: "Jazz", query: "jazz santai" }
 ];
 
 const rooms = [
@@ -49,6 +64,9 @@ export default function HomePage() {
   const [homeGlobal, setHomeGlobal] = useState<Track[]>([]);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeUpdatedAt, setHomeUpdatedAt] = useState<Date | null>(null);
+  const [homeError, setHomeError] = useState("");
+  const [chartRegion, setChartRegion] = useState<ChartRegion>("ID");
+  const library = useLibrary();
   const [showQueue, setShowQueue] = useState(false);
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const [lyrics, setLyrics] = useState<string[]>([]);
@@ -165,11 +183,20 @@ export default function HomePage() {
     let alive = true;
     const loadTrending = async () => {
       setHomeLoading(true);
-      const [idResponse, globalResponse] = await Promise.all([fetch("/api/youtube/trending?region=ID"), fetch("/api/youtube/trending?region=US")]);
-      const [idData, globalData] = await Promise.all([idResponse.json(), globalResponse.json()]);
+      const fetchChart = async (region: string) => {
+        try {
+          const response = await fetch(`/api/youtube/trending?region=${region}`);
+          const data = await response.json();
+          return response.ok ? { items: (data.items ?? []) as Track[], error: "" } : { items: [] as Track[], error: data.error || "Chart belum dapat dimuat." };
+        } catch {
+          return { items: [] as Track[], error: "Koneksi ke server gagal." };
+        }
+      };
+      const [indonesia, global] = await Promise.all([fetchChart("ID"), fetchChart("US")]);
       if (!alive) return;
-      if (idResponse.ok) setHomeIndonesia(idData.items ?? []);
-      if (globalResponse.ok) setHomeGlobal(globalData.items ?? []);
+      if (indonesia.items.length) setHomeIndonesia(indonesia.items);
+      if (global.items.length) setHomeGlobal(global.items);
+      setHomeError(indonesia.error || global.error);
       setHomeUpdatedAt(new Date());
       setHomeLoading(false);
     };
@@ -236,6 +263,12 @@ export default function HomePage() {
     }
   };
 
+  const openSearch = (term: string) => {
+    setQuery(term);
+    setActiveTab("Explore");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const playTrack = (track: Track) => {
     if (localAudioUrl) {
       URL.revokeObjectURL(localAudioUrl);
@@ -244,6 +277,7 @@ export default function HomePage() {
     }
     setCurrentTrack(track);
     setIsPlaying(true);
+    void library.recordPlay(track);
     broadcastRoomPlayback({ action: "track", track });
     if (activeRoomId) {
       void createClient().from("room_playback").upsert({
@@ -299,6 +333,7 @@ export default function HomePage() {
     setQueue(remaining);
     setCurrentTrack(next);
     setIsPlaying(true);
+    void library.recordPlay(next);
     broadcastRoomPlayback({ action: "track", track: next });
     if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: next.videoId, title: next.title, channel_title: next.channelTitle, thumbnail: next.thumbnail, is_playing: true, position_seconds: 0, updated_at: new Date().toISOString() });
     if (activeRoomId) {
@@ -388,13 +423,25 @@ export default function HomePage() {
           </div>}
         </header>}
 
-        {!activeRoomId && <section className="hero">
+        {!activeRoomId && activeTab === "Home" && (
+          <HomeHero
+            region={chartRegion}
+            onRegionChange={setChartRegion}
+            tracks={chartRegion === "ID" ? homeIndonesia : homeGlobal}
+            loading={homeLoading}
+            error={homeError}
+            onPlay={playTrack}
+            onQueue={(track) => void addToQueue(track)}
+          />
+        )}
+
+        {!activeRoomId && activeTab !== "Home" && <section className="hero">
           <div className="hero-copy">
             <div className="eyebrow">LNMUSIK • MUSIC WITHOUT DISTANCE</div>
             <h1>{copy.title.split("\n").map((line, i) => <span key={i}>{line}{i === 0 ? <br /> : null}</span>)}</h1>
             <p>{copy.subtitle}</p>
-            <button className="primary-btn" onClick={() => setActiveTab(activeTab === "Home" ? "Explore" : "Home")}>
-              <Headphones size={15} /> {activeTab === "Home" ? "Jelajahi musik" : "Kembali ke Home"}
+            <button className="primary-btn" onClick={() => setActiveTab("Home")}>
+              <Headphones size={15} /> Kembali ke Home
             </button>
           </div>
         </section>}
@@ -405,21 +452,26 @@ export default function HomePage() {
               <div className="section-head"><h2>Made for your moments</h2><span>Kurasi pilihan</span></div>
               <div className="card-grid">
                 {mixes.map((mix) => (
-                  <article className="music-card" key={mix.title} onClick={() => { setQuery(mix.title); setActiveTab("Explore"); }}>
+                  <button className="music-card" key={mix.title} onClick={() => openSearch(mix.query)}>
                     <div className={`artwork ${mix.tone}`}><AudioLines /></div>
                     <strong>{mix.title}</strong><small>{mix.subtitle}</small>
-                  </article>
+                  </button>
                 ))}
               </div>
             </section>
-            <section className="section trending-section">
-              <div className="section-head"><h2>Hits Indonesia sekarang</h2><span>{homeUpdatedAt ? "Diperbarui " + homeUpdatedAt.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : homeLoading ? "Memuat..." : "YouTube Music Charts"}</span></div>
-              {homeLoading && !homeIndonesia.length ? <div className="loading-state"><Loader2 className="spin" /> Memuat lagu populer Indonesia...</div> : <div className="trending-grid">{homeIndonesia.slice(0,8).map((track,index)=><article className="trending-track" key={track.videoId}><button className="trending-play" onClick={()=>playTrack(track)}><img src={track.thumbnail} alt="" /><span>{index+1}</span></button><div className="trending-copy"><strong>{track.title}</strong><small>{track.channelTitle}</small></div><button className="icon-btn" onClick={()=>void addToQueue(track)} aria-label="Tambah ke antrean"><Plus size={18}/></button></article>)}</div>}
-            </section>
-            <section className="section trending-section">
-              <div className="section-head"><h2>Global hits</h2><span>Trending dunia</span></div>
-              {homeLoading && !homeGlobal.length ? <div className="loading-state"><Loader2 className="spin" /> Memuat global hits...</div> : <div className="trending-grid">{homeGlobal.slice(0,8).map((track,index)=><article className="trending-track" key={track.videoId}><button className="trending-play" onClick={()=>playTrack(track)}><img src={track.thumbnail} alt="" /><span>{index+1}</span></button><div className="trending-copy"><strong>{track.title}</strong><small>{track.channelTitle}</small></div><button className="icon-btn" onClick={()=>void addToQueue(track)} aria-label="Tambah ke antrean"><Plus size={18}/></button></article>)}</div>}
-            </section>
+            {[
+              { title: "Hits Indonesia sekarang", tracks: homeIndonesia, label: "Memuat lagu populer Indonesia..." },
+              { title: "Global hits", tracks: homeGlobal, label: "Memuat global hits..." }
+            ].map(chart => (
+              <section className="section trending-section" key={chart.title}>
+                <div className="section-head"><h2>{chart.title}</h2><span>{homeUpdatedAt ? "Diperbarui " + homeUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "YouTube Music Charts"}</span></div>
+                {homeLoading && !chart.tracks.length
+                  ? <div className="loading-state"><Loader2 className="spin" /> {chart.label}</div>
+                  : chart.tracks.length
+                    ? <TrackList tracks={chart.tracks.slice(0, 10)} ranked activeId={currentTrack?.videoId} isLiked={library.isLiked} onPlay={playTrack} onQueue={(track) => void addToQueue(track)} onLike={(track) => void library.toggleLike(track)} />
+                    : <div className="notice">{homeError || "Chart belum tersedia."}</div>}
+              </section>
+            ))}
             <section className="section">
               <div className="section-head"><h2>Listening rooms</h2><span>Temukan teman dengar</span></div>
               <div className="room-grid">
@@ -438,23 +490,25 @@ export default function HomePage() {
         {(activeTab === "Explore" && !activeRoomId) && (
           <section className="section">
             <div className="section-head"><h2>{searchQuery ? `Hasil untuk “${searchQuery}”` : "Jelajahi musik"}</h2><span><Youtube size={13} style={{ verticalAlign: "middle", marginRight: 5 }} />YouTube</span></div>
+            <div className="genre-chips" role="list" aria-label="Genre">
+              {genres.map(genre => (
+                <button role="listitem" key={genre.label} className={`chip ${query === genre.query ? "active" : ""}`} onClick={() => openSearch(genre.query)}>{genre.label}</button>
+              ))}
+            </div>
             {searchError && <div className="notice">{searchError}</div>}
             {isSearching && <div className="loading-state"><Loader2 className="spin" /> Sedang mencari di YouTube...</div>}
             {!isSearching && results.length > 0 && (
-              <div className="youtube-results">
-                {results.map((track) => (
-                  <article className="youtube-result" key={track.videoId}>
-                    <button className="result-main" onClick={() => playTrack(track)}>
-                      <img src={track.thumbnail} alt="" />
-                      <span className="result-copy"><strong>{track.title}</strong><small>{track.channelTitle}</small></span>
-                    </button>
-                    <button className="icon-btn add-track" onClick={() => addToQueue(track)} aria-label="Tambahkan ke antrean"><Plus size={19} /></button>
-                  </article>
-                ))}
-              </div>
+              <TrackList tracks={results} activeId={currentTrack?.videoId} isLiked={library.isLiked} onPlay={playTrack} onQueue={(track) => void addToQueue(track)} onLike={(track) => void library.toggleLike(track)} />
             )}
             {!isSearching && results.length === 0 && !searchError && (
-              <div className="empty-state"><div className="empty-icon"><Search /></div><h3>Temukan musik berikutnya</h3><p>Ketik judul lagu, nama artis, atau kata kunci di kolom pencarian.</p></div>
+              homeIndonesia.length ? (
+                <>
+                  <div className="section-head sub-head"><h2>Sedang trending</h2><span>Indonesia</span></div>
+                  <TrackList tracks={homeIndonesia.slice(10, 20).length ? homeIndonesia.slice(10, 20) : homeIndonesia.slice(0, 10)} activeId={currentTrack?.videoId} isLiked={library.isLiked} onPlay={playTrack} onQueue={(track) => void addToQueue(track)} onLike={(track) => void library.toggleLike(track)} />
+                </>
+              ) : (
+                <div className="empty-state"><div className="empty-icon"><Search /></div><h3>Temukan musik berikutnya</h3><p>Pilih genre atau ketik judul lagu, nama artis, atau kata kunci di kolom pencarian.</p></div>
+              )
             )}
           </section>
         )}
@@ -462,12 +516,20 @@ export default function HomePage() {
         {activeTab === "Rooms" && <RoomsPanel />}
 
         {activeTab === "Library" && (
-          <section className="section">
-            <div className="section-head"><h2>Your collection</h2><span>Perpustakaan musik</span></div>
-            <div className="card-grid">
-              {["Liked Songs", "Your Playlists", "Albums", "Artists"].map((name, i) => <article className="music-card" key={name}><div className={`artwork ${["", "alt-1", "alt-2", "alt-3"][i]}`}><Library /></div><strong>{name}</strong><small>Koleksimu</small></article>)}
-            </div>
-          </section>
+          <>
+            {library.error && <div className="notice section">{library.error}</div>}
+            <section className="section">
+              <div className="section-head"><h2>Lagu yang kamu sukai</h2><span>{library.liked.length} lagu</span></div>
+              {library.loading ? <div className="loading-state"><Loader2 className="spin" /> Memuat koleksi...</div>
+                : library.liked.length ? <TrackList tracks={library.liked} activeId={currentTrack?.videoId} isLiked={library.isLiked} onPlay={playTrack} onQueue={(track) => void addToQueue(track)} onLike={(track) => void library.toggleLike(track)} />
+                : <div className="empty-state"><div className="empty-icon"><Heart /></div><h3>Belum ada lagu favorit</h3><p>Ketuk ikon hati pada lagu mana pun untuk menyimpannya di sini.</p></div>}
+            </section>
+            <section className="section">
+              <div className="section-head"><h2>Baru diputar</h2><span>{library.history.length} lagu</span></div>
+              {library.history.length ? <TrackList tracks={library.history} activeId={currentTrack?.videoId} isLiked={library.isLiked} onPlay={playTrack} onQueue={(track) => void addToQueue(track)} onLike={(track) => void library.toggleLike(track)} />
+                : !library.loading && <div className="empty-state"><div className="empty-icon"><Library /></div><h3>Riwayat masih kosong</h3><p>Lagu yang kamu putar akan muncul di sini.</p></div>}
+            </section>
+          </>
         )}
 
         {activeTab === "Offline" && (
@@ -513,14 +575,20 @@ export default function HomePage() {
       )}
 
       <div className="playerbar">
-        <button className="track-info track-info-click" onClick={() => setShowNowPlaying(true)} aria-label="Buka pemutar lagu">
-          <div className="track-cover">{currentTrack ? <img src={currentTrack.thumbnail} alt="" /> : <Music2 size={21} />}</div>
-          <div className="track-meta">
-            <strong>{localAudioName || currentTrack?.title || "Belum ada lagu diputar"}</strong>
-            <small>{localAudioName ? "File lokal · perangkat ini" : currentTrack?.channelTitle || "Mulai jelajahi musik"}</small>
-          </div>
-          <span className="icon-btn" aria-hidden="true"><Heart size={16} /></span>
-        </button>
+        <div className="track-info">
+          <button className="track-info-click" onClick={() => currentTrack && setShowNowPlaying(true)} aria-label="Buka pemutar lagu">
+            <div className="track-cover">{currentTrack ? <img src={currentTrack.thumbnail} alt="" /> : <Music2 size={21} />}</div>
+            <div className="track-meta">
+              <strong>{localAudioName || currentTrack?.title || "Belum ada lagu diputar"}</strong>
+              <small>{localAudioName ? "File lokal · perangkat ini" : currentTrack?.channelTitle || "Mulai jelajahi musik"}</small>
+            </div>
+          </button>
+          {currentTrack && (
+            <button className={`icon-btn ${library.isLiked(currentTrack.videoId) ? "liked" : ""}`} onClick={() => void library.toggleLike(currentTrack)} aria-label={library.isLiked(currentTrack.videoId) ? "Hapus dari favorit" : "Tambah ke favorit"} aria-pressed={library.isLiked(currentTrack.videoId)}>
+              <Heart size={16} fill={library.isLiked(currentTrack.videoId) ? "currentColor" : "none"} />
+            </button>
+          )}
+        </div>
         <div className="player-controls">
           <button className="icon-btn skip" aria-label="Sebelumnya" onClick={() => setIsPlaying(false)}><SkipBack size={17} /></button>
           <button className="play-btn" aria-label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} disabled={!currentTrack && !localAudioUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button>

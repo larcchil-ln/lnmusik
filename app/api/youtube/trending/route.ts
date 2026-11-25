@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 type YouTubeItem = {
-  id?: { videoId?: string };
+  id?: string;
   snippet?: {
     title?: string;
     channelTitle?: string;
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     part: "snippet",
     chart: "mostPopular",
     regionCode: region,
-    maxResults: "12",
+    maxResults: "20",
     videoCategoryId: "10",
     key: apiKey
   });
@@ -40,12 +40,12 @@ export async function GET(request: NextRequest) {
     }
 
     const items = ((payload.items ?? []) as YouTubeItem[])
-      .filter(item => item.id?.videoId && item.snippet)
+      .filter(item => typeof item.id === "string" && item.snippet)
       .map(item => ({
-        videoId: item.id!.videoId!,
+        videoId: item.id!,
         title: item.snippet!.title ?? "Tanpa judul",
-        channelTitle: item.snippet!.channelTitle ?? "",
-        thumbnail: item.snippet!.thumbnails?.high?.url ?? item.snippet!.thumbnails?.medium?.url ?? item.snippet!.thumbnails?.default?.url ?? ""
+        channelTitle: (item.snippet!.channelTitle ?? "").replace(/\s*-\s*Topic$/i, "").replace(/VEVO$/i, ""),
+        thumbnail: item.snippet!.thumbnails?.maxres?.url ?? item.snippet!.thumbnails?.standard?.url ?? item.snippet!.thumbnails?.high?.url ?? item.snippet!.thumbnails?.medium?.url ?? `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`
       }));
 
     return NextResponse.json({ region, items }, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=120" } });
