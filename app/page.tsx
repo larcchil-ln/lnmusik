@@ -62,7 +62,7 @@ export default function HomePage() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
 
-  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
+  const applyPlaybackToPlayer = (payload: RoomPlaybackEvent) => {\n    const frame = iframeRef.current?.contentWindow;\n    if (!frame) return;\n    if (payload.action === "track") frame.postMessage(JSON.stringify({ event: "command", func: "loadVideoById", args: [payload.track.videoId] }), "*");\n    else if (payload.action === "play" || payload.action === "pause") frame.postMessage(JSON.stringify({ event: "command", func: payload.action === "play" ? "playVideo" : "pauseVideo", args: [] }), "*");\n    else frame.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");\n  };\n\n  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
     if (!roomChannelRef.current) return;
     void roomChannelRef.current.send({ type: "broadcast", event: "playback", payload });
   };
@@ -239,7 +239,7 @@ export default function HomePage() {
       const func = isPlaying ? "pauseVideo" : "playVideo";
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
       setIsPlaying(!isPlaying);
-      broadcastRoomPlayback({ action: isPlaying ? "pause" : "play" });
+      broadcastRoomPlayback({ action: isPlaying ? "pause" : "play" });\n      if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: currentTrack?.videoId ?? null, title: currentTrack?.title ?? null, channel_title: currentTrack?.channelTitle ?? null, thumbnail: currentTrack?.thumbnail ?? null, is_playing: !isPlaying, updated_at: new Date().toISOString() });
     }
   };
 
@@ -253,7 +253,7 @@ export default function HomePage() {
     setQueue(remaining);
     setCurrentTrack(next);
     setIsPlaying(true);
-    broadcastRoomPlayback({ action: "track", track: next });
+    broadcastRoomPlayback({ action: "track", track: next });\n    if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: next.videoId, title: next.title, channel_title: next.channelTitle, thumbnail: next.thumbnail, is_playing: true, position_seconds: 0, updated_at: new Date().toISOString() });
     if (activeRoomId) {
       const row = roomQueueRows.find(item => item.video_id === next.videoId);
       if (row) void createClient().from("room_queue").delete().eq("id", row.id);
@@ -331,7 +331,7 @@ export default function HomePage() {
             {isSearching && <div className="search-popover-status"><Loader2 size={14} className="spin" /> Mencari lagu...</div>}
             {!isSearching && searchError && <div className="search-popover-status">{searchError}</div>}
             {!isSearching && !searchError && results.length === 0 && <div className="search-popover-status">Tidak ada hasil untuk “{searchQuery}”.</div>}
-            {!isSearching && results.slice(0,5).map(track => <div className="search-suggestion" key={track.videoId}><button className="suggestion-main" onClick={() => { playTrack(track); setQuery(""); setResults([]); }}><img src={track.thumbnail} alt="" /><span><strong>{track.title}</strong><small>{track.channelTitle}</small></span></button><button className="icon-btn" aria-label="Tambah ke antrean" onClick={() => void addToQueue(track)}><Plus size={18}/></button></div>)}
+            {!isSearching && results.slice(0,5).map(track => <div className="search-suggestion" key={track.videoId}><button className="suggestion-main" onClick={() => { playTrack(track); setQuery(""); setResults([]); setSearchError(""); }}><img src={track.thumbnail} alt="" /><span><strong>{track.title}</strong><small>{track.channelTitle}</small></span></button><button className="icon-btn" aria-label="Tambah ke antrean" onClick={() => { void addToQueue(track); setQuery(""); setResults([]); setSearchError(""); }}><Plus size={18}/></button></div>)}
           </div>}
           </div>
           {!activeRoomId && <div className="profile">
@@ -445,7 +445,7 @@ export default function HomePage() {
         </aside>
       )}
 
-      {showNowPlaying && currentTrack && <div className="now-playing-backdrop" onClick={() => setShowNowPlaying(false)}><section className="now-playing-modal" onClick={event => event.stopPropagation()}><div className="now-playing-head"><span>NOW PLAYING · LNMUSIK</span><button className="icon-btn" onClick={() => setShowNowPlaying(false)} aria-label="Tutup"><X/></button></div><div className="now-playing-video"><iframe title={currentTrack.title + " video"} src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=0&controls=1&rel=0&playsinline=1`} allow="autoplay; encrypted-media; picture-in-picture" /></div><div className="now-playing-track"><img src={currentTrack.thumbnail} alt="" /><div><strong>{currentTrack.title}</strong><small>{currentTrack.channelTitle}</small></div></div><div className="now-playing-controls"><button className="play-btn" onClick={togglePlayback} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause/> : <Play fill="currentColor"/>}</button><button className="icon-btn" onClick={playNext} aria-label="Lagu berikutnya"><SkipForward/></button><button className={`icon-btn ${showQueue ? "selected" : ""}`} onClick={() => setShowQueue(value => !value)} aria-label="Buka antrean"><ListMusic/></button></div><div className="now-playing-lyrics"><div className="section-head"><h2>Lirik</h2><span>{lyricsLoading ? "Mencari lirik..." : lyrics.length ? "LRCLIB" : "Belum tersedia"}</span></div>{lyricsLoading ? <p className="muted">Sedang mencari lirik lagu...</p> : lyrics.length ? <div className="lyrics-lines">{lyrics.map((line,index)=><p key={index}>{line}</p>)}</div> : <p className="muted">Lirik untuk lagu ini belum ditemukan. Video tetap bisa dinikmati di atas.</p>}</div></section></div>}
+      {showNowPlaying && currentTrack && <div className="now-playing-backdrop" onClick={() => setShowNowPlaying(false)}><section className="now-playing-modal" onClick={event => event.stopPropagation()}><div className="now-playing-head"><span>NOW PLAYING · LNMUSIK</span><button className="icon-btn" onClick={() => setShowNowPlaying(false)} aria-label="Tutup"><X/></button></div><div className="now-playing-video"><iframe title={currentTrack.title + " video"} src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=1&controls=1&rel=0&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`} allow="autoplay; encrypted-media; picture-in-picture" /></div><div className="now-playing-track"><img src={currentTrack.thumbnail} alt="" /><div><strong>{currentTrack.title}</strong><small>{currentTrack.channelTitle}</small></div></div><div className="now-playing-controls"><button className="play-btn" onClick={togglePlayback} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause/> : <Play fill="currentColor"/>}</button><button className="icon-btn" onClick={playNext} aria-label="Lagu berikutnya"><SkipForward/></button><button className={`icon-btn ${showQueue ? "selected" : ""}`} onClick={() => setShowQueue(value => !value)} aria-label="Buka antrean"><ListMusic/></button></div><div className="now-playing-lyrics"><div className="section-head"><h2>Lirik</h2><span>{lyricsLoading ? "Mencari lirik..." : lyrics.length ? "LRCLIB" : "Belum tersedia"}</span></div>{lyricsLoading ? <p className="muted">Sedang mencari lirik lagu...</p> : lyrics.length ? <div className="lyrics-lines">{lyrics.map((line,index)=><p key={index}>{line}</p>)}</div> : <p className="muted">Lirik untuk lagu ini belum ditemukan. Video tetap bisa dinikmati di atas.</p>}</div></section></div>}
 
       {showQueue && (
         <aside className="queue-panel">
