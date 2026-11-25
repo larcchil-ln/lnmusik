@@ -111,7 +111,31 @@ export default function HomePage() {
       } else if (payload.action === "seek") {
         iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");
       }
-    }).subscribe();
+    }).subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+      // A listener joining late must hydrate the current track from durable room state.
+      const { data, error } = await supabase
+        .from("room_playback")
+        .select("video_id,title,channel_title,thumbnail,is_playing,position_seconds,updated_at")
+        .eq("room_id", activeRoomId)
+        .maybeSingle();
+      if (error || !data?.video_id) return;
+      const track: Track = {
+        videoId: data.video_id,
+        title: data.title || "Sedang diputar",
+        channelTitle: data.channel_title || "",
+        thumbnail: data.thumbnail || `https://i.ytimg.com/vi/${data.video_id}/hqdefault.jpg`
+      };
+      setCurrentTrack(track);
+      setIsPlaying(Boolean(data.is_playing));
+      window.setTimeout(() => {
+        const frame = iframeRef.current?.contentWindow;
+        if (!frame) return;
+        frame.postMessage(JSON.stringify({ event: "command", func: "loadVideoById", args: [data.video_id, Math.max(0, Number(data.position_seconds) || 0)] }), "*");
+        if (data.is_playing) frame.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+        else frame.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+      }, 1200);
+    });
 
     roomChannelRef.current = channel;
     return () => {
@@ -221,6 +245,18 @@ export default function HomePage() {
     setCurrentTrack(track);
     setIsPlaying(true);
     broadcastRoomPlayback({ action: "track", track });
+    if (activeRoomId) {
+      void createClient().from("room_playback").upsert({
+        room_id: activeRoomId,
+        video_id: track.videoId,
+        title: track.title,
+        channel_title: track.channelTitle,
+        thumbnail: track.thumbnail,
+        is_playing: true,
+        position_seconds: 0,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "room_id" });
+    }
     setQueue((items) => items.filter((item) => item.videoId !== track.videoId));
     if (activeRoomId) void createClient().from("room_queue").delete().eq("room_id", activeRoomId).eq("video_id", track.videoId);
   };
