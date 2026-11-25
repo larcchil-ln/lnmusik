@@ -129,3 +129,15 @@ for insert to authenticated with check (
 grant execute on function public.set_room_moderator(uuid,uuid,boolean) to authenticated;
 grant execute on function public.moderate_room_member(uuid,uuid,text) to authenticated;
 grant execute on function public.delete_room_chat_message(uuid) to authenticated;
+
+-- Enable realtime updates for role and mute badges in connected clients.
+do $$
+begin
+  alter publication supabase_realtime add table public.room_moderators;
+exception when duplicate_object then null; when undefined_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.room_chat_mutes;
+exception when duplicate_object then null; when undefined_object then null;
+end $$;
