@@ -134,6 +134,7 @@ export default function RoomsPanel() {
     };
   }, [supabase, activeRoom?.id, userId]);
 
+  const loadModeration = useCallback(async (roomId: string) => {
     if (!supabase) return;
     const [{ data: mods, error: modError }, { data: mutes, error: muteError }] = await Promise.all([
       supabase.from("room_moderators").select("room_id,user_id").eq("room_id", roomId),
