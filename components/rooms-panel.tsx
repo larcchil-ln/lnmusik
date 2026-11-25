@@ -34,9 +34,13 @@ export default function RoomsPanel() {
 
   const loadRooms = useCallback(async () => {
     if (!supabase) return;
-    const { data, error: loadError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("is_public", true).order("created_at", { ascending: false }).limit(30);
-    if (loadError) setError(loadError.message);
-    else setRooms(data ?? []);
+    await supabase.rpc("cleanup_stale_room_members");
+    const { data: activeRooms, error: activeError } = await supabase.rpc("get_active_public_room_ids");
+    if (activeError) { setError("Jalankan SQL presence room terbaru agar daftar room hanya menampilkan room aktif."); return; }
+    const activeIds = [...new Set((activeRooms ?? []).map((item: { room_id: string }) => item.room_id))];
+    if (!activeIds.length) { setRooms([]); return; }
+    const { data, error: loadError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("is_public", true).in("id", activeIds).order("created_at", { ascending: false }).limit(30);
+    if (loadError) setError(loadError.message); else setRooms(data ?? []);
   }, [supabase]);
 
   const loadSeats = useCallback(async (roomId: string) => {
