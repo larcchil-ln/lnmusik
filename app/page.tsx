@@ -59,10 +59,19 @@ export default function HomePage() {
   const [localAudioUrl, setLocalAudioUrl] = useState("");
   const [localAudioName, setLocalAudioName] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);\n  const searchAreaRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const searchAreaRef = useRef<HTMLDivElement | null>(null);
 
 
-  const applyPlaybackToPlayer = (payload: RoomPlaybackEvent) => {\n    const frame = iframeRef.current?.contentWindow;\n    if (!frame) return;\n    if (payload.action === "track") frame.postMessage(JSON.stringify({ event: "command", func: "loadVideoById", args: [payload.track.videoId] }), "*");\n    else if (payload.action === "play" || payload.action === "pause") frame.postMessage(JSON.stringify({ event: "command", func: payload.action === "play" ? "playVideo" : "pauseVideo", args: [] }), "*");\n    else frame.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");\n  };\n\n  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
+  const applyPlaybackToPlayer = (payload: RoomPlaybackEvent) => {
+    const frame = iframeRef.current?.contentWindow;
+    if (!frame) return;
+    if (payload.action === "track") frame.postMessage(JSON.stringify({ event: "command", func: "loadVideoById", args: [payload.track.videoId] }), "*");
+    else if (payload.action === "play" || payload.action === "pause") frame.postMessage(JSON.stringify({ event: "command", func: payload.action === "play" ? "playVideo" : "pauseVideo", args: [] }), "*");
+    else frame.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");
+  };
+
+  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
     if (!roomChannelRef.current) return;
     void roomChannelRef.current.send({ type: "broadcast", event: "playback", payload });
   };
@@ -240,7 +249,8 @@ export default function HomePage() {
       const func = isPlaying ? "pauseVideo" : "playVideo";
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
       setIsPlaying(!isPlaying);
-      broadcastRoomPlayback({ action: isPlaying ? "pause" : "play" });\n      if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: currentTrack?.videoId ?? null, title: currentTrack?.title ?? null, channel_title: currentTrack?.channelTitle ?? null, thumbnail: currentTrack?.thumbnail ?? null, is_playing: !isPlaying, updated_at: new Date().toISOString() });
+      broadcastRoomPlayback({ action: isPlaying ? "pause" : "play" });
+      if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: currentTrack?.videoId ?? null, title: currentTrack?.title ?? null, channel_title: currentTrack?.channelTitle ?? null, thumbnail: currentTrack?.thumbnail ?? null, is_playing: !isPlaying, updated_at: new Date().toISOString() });
     }
   };
 
@@ -254,7 +264,8 @@ export default function HomePage() {
     setQueue(remaining);
     setCurrentTrack(next);
     setIsPlaying(true);
-    broadcastRoomPlayback({ action: "track", track: next });\n    if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: next.videoId, title: next.title, channel_title: next.channelTitle, thumbnail: next.thumbnail, is_playing: true, position_seconds: 0, updated_at: new Date().toISOString() });
+    broadcastRoomPlayback({ action: "track", track: next });
+    if (activeRoomId) void createClient().from("room_playback").upsert({ room_id: activeRoomId, video_id: next.videoId, title: next.title, channel_title: next.channelTitle, thumbnail: next.thumbnail, is_playing: true, position_seconds: 0, updated_at: new Date().toISOString() });
     if (activeRoomId) {
       const row = roomQueueRows.find(item => item.video_id === next.videoId);
       if (row) void createClient().from("room_queue").delete().eq("id", row.id);
