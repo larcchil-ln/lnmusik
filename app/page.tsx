@@ -388,7 +388,7 @@ export default function HomePage() {
           </>
         )}
 
-        {(activeTab === "Explore" || (!!activeRoomId && activeTab === "Rooms" && (searchQuery || isSearching || !!searchError))) && (
+        {(activeTab === "Explore" && !activeRoomId) && (
           <section className="section">
             <div className="section-head"><h2>{searchQuery ? `Hasil untuk “${searchQuery}”` : "Jelajahi musik"}</h2><span><Youtube size={13} style={{ verticalAlign: "middle", marginRight: 5 }} />YouTube</span></div>
             {searchError && <div className="notice">{searchError}</div>}
