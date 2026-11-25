@@ -59,7 +59,7 @@ export default function HomePage() {
   const [localAudioUrl, setLocalAudioUrl] = useState("");
   const [localAudioName, setLocalAudioName] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);\n  const searchAreaRef = useRef<HTMLDivElement | null>(null);
 
 
   const applyPlaybackToPlayer = (payload: RoomPlaybackEvent) => {\n    const frame = iframeRef.current?.contentWindow;\n    if (!frame) return;\n    if (payload.action === "track") frame.postMessage(JSON.stringify({ event: "command", func: "loadVideoById", args: [payload.track.videoId] }), "*");\n    else if (payload.action === "play" || payload.action === "pause") frame.postMessage(JSON.stringify({ event: "command", func: payload.action === "play" ? "playVideo" : "pauseVideo", args: [] }), "*");\n    else frame.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");\n  };\n\n  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
@@ -320,7 +320,7 @@ export default function HomePage() {
 
       <main className="main">
         {<header className="topbar">
-          <div className="search-area"><form className="searchbox" onSubmit={searchYouTube}>
+          <div className="search-area" ref={searchAreaRef}><form className="searchbox" onSubmit={searchYouTube}>
             <Search size={17} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={activeRoomId ? "Cari lagu untuk diputar bareng..." : "Cari lagu, artis, album..."} aria-label="Cari musik di YouTube" />
             <button type="submit" className="search-submit" aria-label="Cari" disabled={isSearching}>
