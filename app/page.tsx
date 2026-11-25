@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useRef, useState } from "react";
 import {
   AudioLines, Home, Compass, Radio, Library, Download, Search, Bell, Plus,
   Play, Pause, SkipBack, SkipForward, Heart, ListMusic, Headphones, Users,
@@ -123,7 +123,7 @@ export default function HomePage() {
     });
   };
 
-  const handleLocalFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (localAudioUrl) URL.revokeObjectURL(localAudioUrl);
