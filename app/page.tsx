@@ -11,7 +11,7 @@ import {
 
 type Tab = "Home" | "Explore" | "Rooms" | "Library" | "Offline";
 type Track = { videoId: string; title: string; channelTitle: string; thumbnail: string };
-type RoomPlaybackEvent = { action: "track"; track: Track } | { action: "play" | "pause" } | { action: "seek"; seconds: number };
+type RoomPlaybackEvent = { action: "track"; track: Track } | { action: "play" } | { action: "pause" } | { action: "seek"; seconds: number };
 type RoomQueueRow = { id: string; video_id: string; title: string; channel_title: string; thumbnail: string; position: number };
 
 const navItems = [
