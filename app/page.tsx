@@ -223,7 +223,7 @@ export default function HomePage() {
       </aside>
 
       <main className="main">
-        <header className="topbar">
+        {!activeRoomId && <header className="topbar">
           <form className="searchbox" onSubmit={searchYouTube}>
             <Search size={17} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari lagu, artis, album..." aria-label="Cari musik di YouTube" />
@@ -236,9 +236,9 @@ export default function HomePage() {
             <div className="avatar">L</div>
             <div className="profile-text"><strong>Listener</strong><small>Free account</small></div>
           </div>
-        </header>
+        </header>}
 
-        <section className="hero">
+        {!activeRoomId && <section className="hero">
           <div className="hero-copy">
             <div className="eyebrow">LNMUSIK • MUSIC WITHOUT DISTANCE</div>
             <h1>{copy.title.split("\n").map((line, i) => <span key={i}>{line}{i === 0 ? <br /> : null}</span>)}</h1>
@@ -247,7 +247,7 @@ export default function HomePage() {
               <Headphones size={15} /> {activeTab === "Home" ? "Jelajahi musik" : "Kembali ke Home"}
             </button>
           </div>
-        </section>
+        </section>}
 
         {activeTab === "Home" && (
           <>
