@@ -315,3 +315,10 @@ button { cursor: pointer; }
 .lyrics-lines{max-height:210px;overflow:auto;text-align:center;padding:8px 10px;color:#ddd;font-size:13px;line-height:1.9}
 .lyrics-lines p{margin:5px 0}
 @media(max-width:760px){.search-area{width:100%;flex:1}.topbar{gap:8px}.now-playing-modal{padding:13px}.now-playing-backdrop{padding:10px}.search-suggestion{padding:6px}.suggestion-main img{width:68px}}
+
+/* Keep one YouTube iframe alive; expand that exact player into the Now Playing video slot. */
+.mini-youtube.expanded-player{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;opacity:1!important;overflow:visible!important;pointer-events:none!important;z-index:86!important}
+.mini-youtube.expanded-player iframe{position:fixed!important;z-index:87!important;left:50%!important;top:calc(50% - min(45vh, 430px) + 82px)!important;transform:translateX(-50%)!important;width:min(560px,calc(100vw - 52px))!important;height:auto!important;aspect-ratio:16/9!important;opacity:1!important;pointer-events:auto!important;border-radius:12px}
+.now-playing-video{width:100%;aspect-ratio:16/9;background:#050505;border-radius:12px;margin-bottom:0}
+.now-playing-modal{position:relative;z-index:85}
+.search-popover{max-height:min(42vh,360px);overflow:auto}
