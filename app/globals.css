@@ -238,3 +238,18 @@ button { cursor: pointer; }
 .lounge-chat-form button{width:36px;height:36px;flex:0 0 auto;border:0;border-radius:50%;display:grid;place-items:center;background:var(--green);color:#061009}
 .lounge-chat-form button:disabled{opacity:.4}
 @media(max-width:760px){.lounge-chat{padding:13px}.lounge-chat-messages{height:230px}.chat-message{max-width:92%}}
+
+
+/* Host and moderator controls */
+.moderation-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+.moderation-actions .join-btn { padding:6px 9px; font-size:11px; }
+.member-chip small { color:var(--accent, #a3ff5f); font-size:9px; font-weight:800; letter-spacing:.08em; }
+.chat-message { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.chat-message-body { min-width:0; flex:1; }
+.chat-delete { flex:0 0 auto; border:0; background:transparent; color:var(--muted, #888); padding:5px; border-radius:7px; cursor:pointer; opacity:.65; }
+.chat-delete:hover { color:#ff7777; opacity:1; background:rgba(255,100,100,.1); }
+.chat-muted-notice { margin:10px 0 0; padding:11px 13px; border-radius:10px; background:rgba(255,170,70,.09); color:#e8b879; font-size:12px; }
+@media (max-width:560px) {
+  .waiting-member { align-items:flex-start; flex-direction:column; gap:9px; }
+  .moderation-actions { justify-content:flex-start; width:100%; }
+}
