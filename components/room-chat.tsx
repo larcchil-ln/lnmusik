@@ -16,6 +16,7 @@ export default function RoomChat({ roomId, userId, displayName, isStaff, isMuted
   const [floatingEmotes, setFloatingEmotes] = useState<FloatingEmote[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(0);
   const [error, setError] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const floatingId = useRef(0);
@@ -41,7 +42,8 @@ export default function RoomChat({ roomId, userId, displayName, isStaff, isMuted
   useEffect(() => {
     void loadMessages();
     void loadReactions();
-    const channel = supabase.channel("room-chat-" + roomId)
+    const channel = supabase.channel("room-chat-" + roomId, { config: { presence: { key: userId } } })
+      .on("presence", { event: "sync" }, () => { setOnlineCount(Object.keys(channel.presenceState()).length); })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_chat_messages", filter: "room_id=eq." + roomId }, (payload) => {
         const incoming = payload.new as ChatMessage;
         setMessages((current) => current.some((item) => item.id === incoming.id) ? current : [...current, incoming].slice(-80));
@@ -55,9 +57,13 @@ export default function RoomChat({ roomId, userId, displayName, isStaff, isMuted
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_chat_reactions", filter: "room_id=eq." + roomId }, () => { void loadReactions(); })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ display_name: displayName, online_at: new Date().toISOString() });
+        }
+      });
     return () => { void supabase.removeChannel(channel); };
-  }, [addFloatingEmote, loadMessages, loadReactions, roomId, supabase]);
+  }, [addFloatingEmote, displayName, loadMessages, loadReactions, roomId, supabase, userId]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -92,7 +98,7 @@ export default function RoomChat({ roomId, userId, displayName, isStaff, isMuted
   };
 
   return <section className="lounge-chat">
-    <div className="lounge-chat-head"><div><MessageCircle size={16} /><strong>Ruang obrolan</strong></div><span>LIVE CHAT</span></div>
+    <div className="lounge-chat-head"><div><MessageCircle size={16} /><strong>Ruang obrolan</strong></div><span><i className="chat-live-dot" /> {onlineCount} ONLINE · LIVE CHAT</span></div>
     <div className="lounge-chat-messages" ref={listRef}>
       {messages.length ? messages.map((item) => {
         const messageReactions = EMOTES.map((emoji) => {
