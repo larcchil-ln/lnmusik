@@ -1,13 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Send, MessageCircle } from "lucide-react";
+import { Send, MessageCircle, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type ChatMessage = { id: string; room_id: string; user_id: string; display_name: string; content: string; message_type: "text" | "emote"; created_at: string };
 const EMOTES = ["💚", "😂", "🔥", "🎧", "🫶", "✨", "🥹", "👏"];
 
-export default function RoomChat({ roomId, userId, displayName }: { roomId: string; userId: string; displayName: string }) {
+export default function RoomChat({ roomId, userId, displayName, isStaff, isMuted }: { roomId: string; userId: string; displayName: string; isStaff: boolean; isMuted: boolean }) {
   const [supabase] = useState(() => createClient());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -39,6 +39,12 @@ export default function RoomChat({ roomId, userId, displayName }: { roomId: stri
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
 
+  const deleteMessage = async (messageId: string) => {
+    setError("");
+    const { error: deleteError } = await supabase.rpc("delete_room_chat_message", { p_message_id: messageId });
+    if (deleteError) setError(deleteError.message);
+  };
+
   const send = async (event: FormEvent, type: "text" | "emote" = "text", value?: string) => {
     event.preventDefault();
     const content = (value ?? draft).trim();
@@ -54,14 +60,19 @@ export default function RoomChat({ roomId, userId, displayName }: { roomId: stri
     <div className="lounge-chat-head"><div><MessageCircle size={16} /><strong>Ruang obrolan</strong></div><span>LIVE CHAT</span></div>
     <div className="lounge-chat-messages" ref={listRef}>
       {messages.length ? messages.map((item) => <div className={"chat-message " + (item.user_id === userId ? "mine " : "") + (item.message_type === "emote" ? "chat-emote" : "")} key={item.id}>
-        {item.message_type === "emote" ? <><strong>{item.display_name}</strong><span>{item.content}</span></> : <><div className="chat-message-meta"><strong>{item.display_name}</strong><time>{new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div><p>{item.content}</p></>}
+        <div className="chat-message-body">
+          {item.message_type === "emote" ? <><strong>{item.display_name}</strong><span>{item.content}</span></> : <><div className="chat-message-meta"><strong>{item.display_name}</strong><time>{new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div><p>{item.content}</p></>}
+        </div>
+        {(isStaff || item.user_id === userId) && <button type="button" className="chat-delete" onClick={() => void deleteMessage(item.id)} aria-label="Hapus pesan"><Trash2 size={13} /></button>}
       </div>) : <div className="chat-empty">Belum ada obrolan. Sapa teman dengarmu 👋</div>}
     </div>
     {error && <p className="chat-error">{error}</p>}
-    <div className="lounge-emotes">{EMOTES.map((emoji) => <button type="button" key={emoji} disabled={sending} onClick={(event) => void send(event, "emote", emoji)} aria-label={"Kirim " + emoji}>{emoji}</button>)}</div>
-    <form className="lounge-chat-form" onSubmit={(event) => void send(event)}>
-      <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500} placeholder="Tulis sesuatu ke room..." aria-label="Pesan chat" />
-      <button type="submit" disabled={!draft.trim() || sending} aria-label="Kirim pesan"><Send size={16} /></button>
-    </form>
+    {isMuted ? <p className="chat-muted-notice">Kamu sedang dibisukan oleh pengelola room.</p> : <>
+      <div className="lounge-emotes">{EMOTES.map((emoji) => <button type="button" key={emoji} disabled={sending} onClick={(event) => void send(event, "emote", emoji)} aria-label={"Kirim " + emoji}>{emoji}</button>)}</div>
+      <form className="lounge-chat-form" onSubmit={(event) => void send(event)}>
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500} placeholder="Tulis sesuatu ke room..." aria-label="Pesan chat" />
+        <button type="submit" disabled={!draft.trim() || sending} aria-label="Kirim pesan"><Send size={16} /></button>
+      </form>
+    </>}
   </section>;
 }
