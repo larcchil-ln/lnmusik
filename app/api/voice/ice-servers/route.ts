@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const authorization = request.headers.get("authorization");
-  const accessToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (!accessToken) {
-    return NextResponse.json({ error: "Sesi Listener tidak valid." }, { status: 401 });
-  }
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
@@ -19,12 +14,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Konfigurasi voice server belum lengkap." }, { status: 503 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+  const cookieStore = await cookies();
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        } catch {
+          // Cookie refresh is not required for this read-only credential request.
+        }
+      }
+    }
   });
-  const { data: authData, error: authError } = await supabase.auth.getUser(accessToken);
+  const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
-    return NextResponse.json({ error: "Sesi Listener sudah berakhir. Silakan masuk kembali." }, { status: 401 });
+    return NextResponse.json({ error: "Sesi Listener tidak valid. Muat ulang halaman lalu coba lagi." }, { status: 401 });
   }
 
   try {
