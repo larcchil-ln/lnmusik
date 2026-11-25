@@ -152,7 +152,7 @@ export default function HomePage() {
     setIsSearching(true);
     setSearchError("");
     setSearchQuery(term);
-    setActiveTab("Explore");
+    if (!activeRoomId) setActiveTab("Explore");
     try {
       const response = await fetch(`/api/youtube/search?q=${encodeURIComponent(term)}`);
       const data = await response.json();
@@ -283,19 +283,19 @@ export default function HomePage() {
       </aside>
 
       <main className="main">
-        {!activeRoomId && <header className="topbar">
+        {<header className="topbar">
           <form className="searchbox" onSubmit={searchYouTube}>
             <Search size={17} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari lagu, artis, album..." aria-label="Cari musik di YouTube" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={activeRoomId ? "Cari lagu untuk diputar bareng..." : "Cari lagu, artis, album..."} aria-label="Cari musik di YouTube" />
             <button type="submit" className="search-submit" aria-label="Cari" disabled={isSearching}>
               {isSearching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
             </button>
           </form>
-          <div className="profile">
+          {!activeRoomId && <div className="profile">
             <button className="icon-btn" aria-label="Notifikasi"><Bell size={18} /></button>
             <div className="avatar">L</div>
             <div className="profile-text"><strong>Listener</strong><small>Free account</small></div>
-          </div>
+          </div>}
         </header>}
 
         {!activeRoomId && <section className="hero">
@@ -345,7 +345,7 @@ export default function HomePage() {
           </>
         )}
 
-        {activeTab === "Explore" && (
+        {(activeTab === "Explore" || (!!activeRoomId && activeTab === "Rooms" && (searchQuery || isSearching || !!searchError))) && (
           <section className="section">
             <div className="section-head"><h2>{searchQuery ? `Hasil untuk “${searchQuery}”` : "Jelajahi musik"}</h2><span><Youtube size={13} style={{ verticalAlign: "middle", marginRight: 5 }} />YouTube</span></div>
             {searchError && <div className="notice">{searchError}</div>}
