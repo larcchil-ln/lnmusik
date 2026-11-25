@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Copy, Loader2, Plus, Radio, Users, LogIn, DoorOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import RoomChat from "@/components/room-chat";
+import VoiceRoom from "@/components/voice-room";
 
 type Room = { id: string; code: string; name: string; host_id: string; max_members: number; is_public: boolean; created_at: string };
 type Member = { user_id: string; display_name: string; joined_at: string };
@@ -373,6 +374,7 @@ export default function RoomsPanel() {
           {waitingMembers.length ? <div className="waiting-list">{waitingMembers.map(member => <div className="waiting-member" key={member.user_id}><span><i className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? " · Host" : ""}</span><button className="join-btn" disabled={seats.length >= 10 || member.user_id === userId} onClick={() => void hostSeatMember(member.user_id)}>Naikkan ke kursi</button></div>)}</div> : <p className="seat-hint">Semua anggota sudah mendapat kursi.</p>}
         </div>}
       </div>
+      <VoiceRoom roomId={activeRoom.id} userId={userId} displayName={displayName} />
       <RoomChat roomId={activeRoom.id} userId={userId} displayName={displayName} isStaff={isStaff} isMuted={isMuted} />
     </section>;
   }
