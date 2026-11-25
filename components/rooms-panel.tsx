@@ -5,7 +5,7 @@ import { Copy, Loader2, Plus, Radio, Users, LogIn, DoorOpen } from "lucide-react
 import { createClient } from "@/lib/supabase/client";
 import RoomChat from "@/components/room-chat";
 
-type Room = { id: string; code: string; name: string; host_id: string; max_members: number; created_at: string };
+type Room = { id: string; code: string; name: string; host_id: string; max_members: number; is_public: boolean; created_at: string };
 type Member = { user_id: string; display_name: string; joined_at: string };
 type Seat = { room_id: string; seat_number: number; user_id: string };
 type Moderator = { room_id: string; user_id: string };
@@ -27,10 +27,14 @@ export default function RoomsPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showRoomSettings, setShowRoomSettings] = useState(false);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsPublic, setSettingsPublic] = useState(true);
+  const [settingsMaxMembers, setSettingsMaxMembers] = useState("10");
 
   const loadRooms = useCallback(async () => {
     if (!supabase) return;
-    const { data, error: loadError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("is_public", true).order("created_at", { ascending: false }).limit(30);
+    const { data, error: loadError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("is_public", true).order("created_at", { ascending: false }).limit(30);
     if (loadError) setError(loadError.message);
     else setRooms(data ?? []);
   }, [supabase]);
@@ -89,7 +93,7 @@ export default function RoomsPanel() {
       const savedRoomId = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
       if (!savedRoomId) return;
       const [{ data: room, error: roomError }, { data: membership, error: membershipError }] = await Promise.all([
-        supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", savedRoomId).maybeSingle(),
+        supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("id", savedRoomId).maybeSingle(),
         supabase.from("room_members").select("room_id").eq("room_id", savedRoomId).eq("user_id", userId).maybeSingle()
       ]);
       if (!alive) return;
@@ -148,6 +152,11 @@ export default function RoomsPanel() {
     void loadSeats(activeRoom.id);
     void loadModeration(activeRoom.id);
     const channel = supabase.channel(`room-lounge-${activeRoom.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${activeRoom.id}` }, (payload) => {
+        const updated = payload.new as Room;
+        if (updated?.id) setActiveRoom(current => current?.id === updated.id ? { ...current, ...updated } : current);
+        void loadRooms();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, (payload) => {
         void loadMembers(activeRoom.id);
         void loadRooms();
@@ -185,7 +194,7 @@ export default function RoomsPanel() {
     else {
       const created = Array.isArray(data) ? data[0] : data;
       if (created?.room_id) {
-        const { data: room } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", created.room_id).single();
+        const { data: room } = await supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("id", created.room_id).single();
         if (room) {
           window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, room.id);
           setActiveRoom(room);
@@ -207,7 +216,7 @@ export default function RoomsPanel() {
     const { data: joinedId, error: rpcError } = await supabase.rpc("join_listening_room", { room_code: roomCode.trim(), listener_name: displayName.trim() });
     if (rpcError) setError(rpcError.message);
     else if (joinedId) {
-      const { data: room, error: roomError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", joinedId).single();
+      const { data: room, error: roomError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("id", joinedId).single();
       if (roomError) setError(roomError.message);
       else if (room) {
         window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, room.id);
@@ -265,6 +274,20 @@ export default function RoomsPanel() {
     }
   };
 
+  const saveRoomSettings = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeRoom || !supabase || userId !== activeRoom.host_id) return;
+    const cleanName = settingsName.trim();
+    const maxMembers = Number(settingsMaxMembers);
+    if (cleanName.length < 2 || cleanName.length > 60) { setError("Nama room harus 2–60 karakter."); return; }
+    if (!Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > 10 || maxMembers < members.length) { setError(`Kapasitas harus 2–10 dan tidak boleh di bawah jumlah anggota (${members.length}).`); return; }
+    setBusy(true); setError(""); setMessage("");
+    const { data, error: updateError } = await supabase.from("rooms").update({ name: cleanName, is_public: settingsPublic, max_members: maxMembers }).eq("id", activeRoom.id).eq("host_id", userId).select("id,code,name,host_id,max_members,is_public,created_at").single();
+    if (updateError) setError(updateError.message);
+    else { setActiveRoom(data); setMessage("Pengaturan room berhasil disimpan."); setShowRoomSettings(false); void loadRooms(); }
+    setBusy(false);
+  };
+
   const copyCode = async () => {
     if (!activeRoom) return;
     try { await navigator.clipboard.writeText(activeRoom.code); setMessage("Kode room berhasil disalin."); }
@@ -284,9 +307,16 @@ export default function RoomsPanel() {
       {error && <div className="notice">{error}</div>}
       {message && <div className="room-feedback">{message}</div>}
       <div className="active-room room-card lounge-room">
-        <div className="room-top"><span className="live">● LNMUSIK LOUNGE · LIVE</span><button className="join-btn" onClick={leaveRoom}><DoorOpen size={13} /> Keluar room</button></div>
+        <div className="room-top"><span className="live">● LNMUSIK LOUNGE · LIVE</span><div className="room-head-actions">{isHost && <button className="join-btn" onClick={() => { setSettingsName(activeRoom.name); setSettingsPublic(activeRoom.is_public); setSettingsMaxMembers(String(activeRoom.max_members)); setShowRoomSettings(value => !value); }}>⚙ Pengaturan</button>}<button className="join-btn" onClick={leaveRoom}><DoorOpen size={13} /> Keluar room</button></div></div>
         <h3>{activeRoom.name}</h3>
-        <p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button></p>
+        <p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button><span className="room-visibility">{activeRoom.is_public ? "● Publik" : "● Privat"}</span></p>
+        {showRoomSettings && isHost && <form className="room-settings" onSubmit={saveRoomSettings}>
+          <div className="lounge-seats-head"><strong>Pengaturan room</strong><span>Hanya host</span></div>
+          <label>Nama room<input value={settingsName} maxLength={60} onChange={event => setSettingsName(event.target.value)} /></label>
+          <label>Visibilitas<select value={settingsPublic ? "public" : "private"} onChange={event => setSettingsPublic(event.target.value === "public")}><option value="public">Publik · tampil di daftar room</option><option value="private">Privat · hanya lewat kode undangan</option></select></label>
+          <label>Kapasitas anggota<select value={settingsMaxMembers} onChange={event => setSettingsMaxMembers(event.target.value)}>{Array.from({ length: 9 }, (_, index) => index + 2).map(value => <option key={value} value={value}>{value} orang</option>)}</select></label>
+          <div className="room-settings-actions"><button type="button" className="join-btn" onClick={() => setShowRoomSettings(false)}>Batal</button><button className="primary-btn" disabled={busy}>Simpan pengaturan</button></div>
+        </form>}
         <div className="member-heading"><Users size={15} /> Anggota ({members.length}/{activeRoom.max_members})</div>
         <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : moderators.some(item => item.user_id === member.user_id) ? <small>MOD</small> : null}</div>)}</div>
         {(isHost || isStaff) && <div className="waiting-members">
