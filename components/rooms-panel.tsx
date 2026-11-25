@@ -110,8 +110,10 @@ export default function RoomsPanel() {
   useEffect(() => {
     if (!activeRoom || !supabase) return;
     void loadMembers(activeRoom.id);
-    const channel = supabase.channel(`room-members-${activeRoom.id}`)
+    void loadSeats(activeRoom.id);
+    const channel = supabase.channel(`room-lounge-${activeRoom.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadMembers(activeRoom.id); void loadRooms(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_seats", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadSeats(activeRoom.id); })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [activeRoom, loadMembers, loadRooms, loadSeats, supabase]);
@@ -181,6 +183,18 @@ export default function RoomsPanel() {
     await loadSeats(activeRoom.id);
   };
 
+  const hostSeatMember = async (memberId: string) => {
+    if (!activeRoom || !supabase || userId !== activeRoom.host_id) return;
+    const occupied = new Set(seats.map(seat => seat.seat_number));
+    const freeSeat = Array.from({ length: 10 }, (_, i) => i + 1).find(number => !occupied.has(number));
+    if (!freeSeat) { setError("Semua kursi sudah terisi."); return; }
+    setError("");
+    const { error: seatError } = await supabase.from("room_seats").insert({ room_id: activeRoom.id, seat_number: freeSeat, user_id: memberId });
+    if (seatError) setError(seatError.code === "23505" ? "Anggota atau kursi itu baru saja ditempatkan." : seatError.message);
+    else setMessage(`${members.find(member => member.user_id === memberId)?.display_name || "Listener"} dinaikkan ke kursi ${freeSeat}.`);
+    await loadSeats(activeRoom.id);
+  };
+
   const standUp = async () => {
     if (!activeRoom || !supabase || !userId) return;
     const { error: seatError } = await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
@@ -211,6 +225,42 @@ export default function RoomsPanel() {
 
   if (!supabase || !userId) return <section className="section"><div className="loading-state"><Loader2 className="spin" /> Menghubungkan Listener ke Supabase...</div>{error && <div className="notice">{error}</div>}</section>;
 
+  if (activeRoom) {
+    const isHost = userId === activeRoom.host_id;
+    const seatedIds = new Set(seats.map(seat => seat.user_id));
+    const waitingMembers = members.filter(member => !seatedIds.has(member.user_id));
+    return <section className="section lounge-page">
+      {error && <div className="notice">{error}</div>}
+      {message && <div className="room-feedback">{message}</div>}
+      <div className="active-room room-card lounge-room">
+        <div className="room-top"><span className="live">● LNMUSIK LOUNGE · LIVE</span><button className="join-btn" onClick={leaveRoom}><DoorOpen size={13} /> Keluar room</button></div>
+        <h3>{activeRoom.name}</h3>
+        <p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button></p>
+        <div className="member-heading"><Users size={15} /> Anggota ({members.length}/{activeRoom.max_members})</div>
+        <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : null}</div>)}</div>
+        <div className="lounge-seats">
+          <div className="lounge-seats-head"><strong>Tempat duduk</strong><span>{seats.length}/10 terisi</span></div>
+          <div className="seat-grid">{Array.from({ length: 10 }, (_, index) => {
+            const number = index + 1;
+            const seat = seats.find(item => item.seat_number === number);
+            const person = members.find(item => item.user_id === seat?.user_id);
+            const mine = seat?.user_id === userId;
+            return <button type="button" key={number} className={`seat-tile ${seat ? "occupied" : "empty"} ${mine ? "mine" : ""}`} disabled={!!seat && !mine} onClick={() => mine ? void standUp() : void takeSeat(number)}>
+              <span className="seat-emoji">{seat ? (mine ? "😎" : "🎧") : "＋"}</span>
+              <strong>{seat ? (person?.display_name || "Listener") : "Kursi kosong"}</strong>
+              <small>{seat ? (mine ? "Kamu · berdiri" : `Kursi ${number}`) : `Kursi ${number} · pilih`}</small>
+            </button>;
+          })}</div>
+          <p className="seat-hint">Pilih kursi kosong untuk duduk. Tekan kursimu lagi untuk berdiri.</p>
+        </div>
+        {isHost && <div className="waiting-members">
+          <div className="lounge-seats-head"><strong>Anggota menunggu kursi</strong><span>{waitingMembers.length} belum duduk</span></div>
+          {waitingMembers.length ? <div className="waiting-list">{waitingMembers.map(member => <div className="waiting-member" key={member.user_id}><span><i className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? " · Host" : ""}</span><button className="join-btn" disabled={seats.length >= 10 || member.user_id === userId} onClick={() => void hostSeatMember(member.user_id)}>Naikkan ke kursi</button></div>)}</div> : <p className="seat-hint">Semua anggota sudah mendapat kursi.</p>}
+        </div>}
+      </div>
+    </section>;
+  }
+
   return <section className="section">
     <div className="section-head"><h2>Listening rooms</h2><span>Maksimal 10 orang per room</span></div>
     {error && <div className="notice">{error}</div>}
@@ -229,14 +279,7 @@ export default function RoomsPanel() {
         <button className="join-btn join-submit" disabled={busy || !roomCode.trim()}><LogIn size={14} /> Gabung room</button>
       </form>
     </div>
-    {activeRoom && <div className="active-room room-card">
-      <div className="room-top"><span className="live">● ROOM AKTIF</span><button className="join-btn" onClick={leaveRoom}><DoorOpen size={13} /> Keluar</button></div>
-      <h3>{activeRoom.name}</h3><p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button></p>
-      <div className="member-heading"><Users size={15} /> Anggota ({members.length}/{activeRoom.max_members})</div>
-      <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : null}</div>)}
-      <div className="lounge-seats"><div className="lounge-seats-head"><strong>Tempat duduk</strong><span>{seats.length}/10 terisi</span></div><div className="seat-grid">{Array.from({ length: 10 }, (_, index) => { const number = index + 1; const seat = seats.find(item => item.seat_number === number); const person = members.find(item => item.user_id === seat?.user_id); const mine = seat?.user_id === userId; return <button type="button" key={number} className={`seat-tile ${seat ? "occupied" : "empty"} ${mine ? "mine" : ""}`} disabled={!!seat && !mine} onClick={() => mine ? void standUp() : void takeSeat(number)}><span className="seat-emoji">{seat ? (mine ? "😎" : "🎧") : "＋"}</span><strong>{seat ? (person?.display_name || "Listener") : "Kursi kosong"}</strong><small>{seat ? (mine ? "Kamu · berdiri" : `Kursi ${number}`) : `Kursi ${number} · pilih`}</small></button>; })}</div><p className="seat-hint">Pilih kursi kosong untuk duduk. Tekan kursimu lagi untuk berdiri.</p></div></div>
-    </div>}
     <div className="section-head room-list-heading"><h2>Room publik</h2><span>{rooms.length} room ditemukan</span></div>
-    {rooms.length ? <div className="room-grid">{rooms.map(room => <article className="room-card" key={room.id}><div className="room-top"><span className="live">● TERSEDIA</span><Radio size={16} /></div><h3>{room.name}</h3><p>Kode: {room.code}</p><div className="room-foot"><span><Users size={13} /> Room publik</span><button className="join-btn" disabled={busy || room.id === activeRoom?.id} onClick={() => setRoomCode(room.code)}>Pakai kode</button></div></article>)}</div> : <div className="empty-state"><div className="empty-icon"><Radio /></div><h3>Belum ada room publik</h3><p>Buat room pertama dan undang temanmu dengan kode room.</p></div>}
+    {rooms.length ? <div className="room-grid">{rooms.map(room => <article className="room-card" key={room.id}><div className="room-top"><span className="live">● TERSEDIA</span><Radio size={16} /></div><h3>{room.name}</h3><p>Kode: {room.code}</p><div className="room-foot"><span><Users size={13} /> Room publik</span><button className="join-btn" disabled={busy} onClick={() => setRoomCode(room.code)}>Pakai kode</button></div></article>)}</div> : <div className="empty-state"><div className="empty-icon"><Radio /></div><h3>Belum ada room publik</h3><p>Buat room pertama dan undang temanmu dengan kode room.</p></div>}
   </section>;
 }
