@@ -173,7 +173,8 @@ export default function HomePage() {
     const params = new URLSearchParams({ track: currentTrack.title, artist: currentTrack.channelTitle });
     fetch(`/api/lyrics?${params.toString()}`).then(response => response.ok ? response.json() : null).then(data => {
       if (!alive) return;
-      setLyrics(typeof data?.plainLyrics === "string" ? data.plainLyrics.split("\\n").filter(Boolean) : []);
+      setLyrics(typeof data?.plainLyrics === "string" ? data.plainLyrics.split("
+").filter(Boolean) : []);
     }).catch(() => { if (alive) setLyrics([]); }).finally(() => { if (alive) setLyricsLoading(false); });
     return () => { alive = false; };
   }, [currentTrack?.videoId]);
