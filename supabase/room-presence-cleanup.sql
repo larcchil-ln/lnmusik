@@ -30,5 +30,5 @@ begin
 end;
 $$;
 
-grant execute on function public.cleanup_stale_room_members() to authenticated;
+drop policy if exists "Users heartbeat own room membership" on public.room_members;\ncreate policy "Users heartbeat own room membership" on public.room_members\nfor update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());\n\ngrant execute on function public.cleanup_stale_room_members() to authenticated;
 grant update (last_seen_at) on public.room_members to authenticated;
