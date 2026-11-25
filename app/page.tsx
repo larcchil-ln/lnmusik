@@ -1,6 +1,7 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import RoomsPanel from "@/components/rooms-panel";
 import {
   AudioLines, Home, Compass, Radio, Library, Download, Search, Bell, Plus,
@@ -10,6 +11,7 @@ import {
 
 type Tab = "Home" | "Explore" | "Rooms" | "Library" | "Offline";
 type Track = { videoId: string; title: string; channelTitle: string; thumbnail: string };
+type RoomPlaybackEvent = { action: "track"; track: Track } | { action: "play" | "pause" } | { action: "seek"; seconds: number };
 
 const navItems = [
   { name: "Home" as Tab, icon: Home },
@@ -43,10 +45,62 @@ export default function HomePage() {
   const [queue, setQueue] = useState<Track[]>([]);
   const [showQueue, setShowQueue] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const roomChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
   const [localAudioUrl, setLocalAudioUrl] = useState("");
   const [localAudioName, setLocalAudioName] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+
+  const broadcastRoomPlayback = (payload: RoomPlaybackEvent) => {
+    if (!roomChannelRef.current) return;
+    void roomChannelRef.current.send({ type: "broadcast", event: "playback", payload });
+  };
+
+  useEffect(() => {
+    const handleRoomChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ roomId: string | null }>).detail;
+      setActiveRoomId(detail?.roomId ?? null);
+    };
+    window.addEventListener("lnmusik:room", handleRoomChange);
+    return () => window.removeEventListener("lnmusik:room", handleRoomChange);
+  }, []);
+
+  useEffect(() => {
+    if (!activeRoomId) {
+      if (roomChannelRef.current) {
+        void createClient().removeChannel(roomChannelRef.current);
+        roomChannelRef.current = null;
+      }
+      return;
+    }
+
+    const supabase = createClient();
+    const channel = supabase.channel(`room-playback-${activeRoomId}`, { config: { broadcast: { self: false } } });
+    channel.on("broadcast", { event: "playback" }, ({ payload }: { payload: RoomPlaybackEvent }) => {
+      if (!payload) return;
+      if (payload.action === "track") {
+        setLocalAudioUrl((oldUrl) => { if (oldUrl) URL.revokeObjectURL(oldUrl); return ""; });
+        setLocalAudioName("");
+        setCurrentTrack(payload.track);
+        setIsPlaying(true);
+        setQueue((items) => items.filter((item) => item.videoId !== payload.track.videoId));
+      } else if (payload.action === "play" || payload.action === "pause") {
+        const shouldPlay = payload.action === "play";
+        setIsPlaying(shouldPlay);
+        iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: shouldPlay ? "playVideo" : "pauseVideo", args: [] }), "*");
+      } else if (payload.action === "seek") {
+        iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "seekTo", args: [payload.seconds, true] }), "*");
+      }
+    }).subscribe();
+
+    roomChannelRef.current = channel;
+    return () => {
+      void supabase.removeChannel(channel);
+      if (roomChannelRef.current === channel) roomChannelRef.current = null;
+    };
+  }, [activeRoomId]);
 
   const searchYouTube = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -81,6 +135,7 @@ export default function HomePage() {
     }
     setCurrentTrack(track);
     setIsPlaying(true);
+    broadcastRoomPlayback({ action: "track", track });
     setQueue((items) => items.filter((item) => item.videoId !== track.videoId));
   };
 
@@ -99,6 +154,7 @@ export default function HomePage() {
       const func = isPlaying ? "pauseVideo" : "playVideo";
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
       setIsPlaying(!isPlaying);
+      broadcastRoomPlayback({ action: isPlaying ? "pause" : "play" });
     }
   };
 
@@ -112,6 +168,7 @@ export default function HomePage() {
     setQueue(remaining);
     setCurrentTrack(next);
     setIsPlaying(true);
+    broadcastRoomPlayback({ action: "track", track: next });
   };
 
   const moveQueueItem = (index: number, direction: -1 | 1) => {
