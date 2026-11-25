@@ -12,6 +12,7 @@ import {
 type Tab = "Home" | "Explore" | "Rooms" | "Library" | "Offline";
 type Track = { videoId: string; title: string; channelTitle: string; thumbnail: string };
 type RoomPlaybackEvent = { action: "track"; track: Track } | { action: "play" | "pause" } | { action: "seek"; seconds: number };
+type RoomQueueRow = { id: string; video_id: string; title: string; channel_title: string; thumbnail: string; position: number };
 
 const navItems = [
   { name: "Home" as Tab, icon: Home },
@@ -43,6 +44,11 @@ export default function HomePage() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [queue, setQueue] = useState<Track[]>([]);
+  const [roomQueueRows, setRoomQueueRows] = useState<RoomQueueRow[]>([]);
+  const [homeIndonesia, setHomeIndonesia] = useState<Track[]>([]);
+  const [homeGlobal, setHomeGlobal] = useState<Track[]>([]);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeUpdatedAt, setHomeUpdatedAt] = useState<Date | null>(null);
   const [showQueue, setShowQueue] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
@@ -102,6 +108,40 @@ export default function HomePage() {
     };
   }, [activeRoomId]);
 
+  useEffect(() => {
+    if (!activeRoomId) { setRoomQueueRows([]); return; }
+    const supabase = createClient();
+    let alive = true;
+    const refresh = async () => {
+      const { data, error } = await supabase.from("room_queue").select("id,video_id,title,channel_title,thumbnail,position").eq("room_id", activeRoomId).order("position", { ascending: true }).order("created_at", { ascending: true });
+      if (!alive) return;
+      if (error) { setSearchError(error.message); return; }
+      const rows = (data ?? []) as RoomQueueRow[];
+      setRoomQueueRows(rows);
+      setQueue(rows.map(row => ({ videoId: row.video_id, title: row.title, channelTitle: row.channel_title, thumbnail: row.thumbnail })));
+    };
+    void refresh();
+    const channel = supabase.channel("room-queue-" + activeRoomId).on("postgres_changes", { event: "*", schema: "public", table: "room_queue", filter: "room_id=eq." + activeRoomId }, () => { void refresh(); }).subscribe();
+    return () => { alive = false; void supabase.removeChannel(channel); };
+  }, [activeRoomId]);
+
+  useEffect(() => {
+    let alive = true;
+    const loadTrending = async () => {
+      setHomeLoading(true);
+      const [idResponse, globalResponse] = await Promise.all([fetch("/api/youtube/trending?region=ID"), fetch("/api/youtube/trending?region=US")]);
+      const [idData, globalData] = await Promise.all([idResponse.json(), globalResponse.json()]);
+      if (!alive) return;
+      if (idResponse.ok) setHomeIndonesia(idData.items ?? []);
+      if (globalResponse.ok) setHomeGlobal(globalData.items ?? []);
+      setHomeUpdatedAt(new Date());
+      setHomeLoading(false);
+    };
+    void loadTrending();
+    const interval = window.setInterval(() => { void loadTrending(); }, 10 * 60 * 1000);
+    return () => { alive = false; window.clearInterval(interval); };
+  }, []);
+
   const searchYouTube = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const term = query.trim();
@@ -137,10 +177,19 @@ export default function HomePage() {
     setIsPlaying(true);
     broadcastRoomPlayback({ action: "track", track });
     setQueue((items) => items.filter((item) => item.videoId !== track.videoId));
+    if (activeRoomId) void createClient().from("room_queue").delete().eq("room_id", activeRoomId).eq("video_id", track.videoId);
   };
 
-  const addToQueue = (track: Track) => {
+  const addToQueue = async (track: Track) => {
     if (currentTrack?.videoId === track.videoId || queue.some((item) => item.videoId === track.videoId)) return;
+    if (activeRoomId) {
+      const supabase = createClient();
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) { setSearchError("Identitas Listener belum tersedia."); return; }
+      const { error } = await supabase.from("room_queue").insert({ room_id: activeRoomId, video_id: track.videoId, title: track.title, channel_title: track.channelTitle, thumbnail: track.thumbnail, position: roomQueueRows.length, added_by: auth.user.id });
+      if (error) { setSearchError("Gagal menambahkan lagu ke antrean room: " + error.message); return; }
+      return;
+    }
     setQueue((items) => [...items, track]);
   };
 
@@ -169,6 +218,10 @@ export default function HomePage() {
     setCurrentTrack(next);
     setIsPlaying(true);
     broadcastRoomPlayback({ action: "track", track: next });
+    if (activeRoomId) {
+      const row = roomQueueRows.find(item => item.video_id === next.videoId);
+      if (row) void createClient().from("room_queue").delete().eq("id", row.id);
+    }
   };
 
   const moveQueueItem = (index: number, direction: -1 | 1) => {
@@ -177,6 +230,13 @@ export default function HomePage() {
       if (target < 0 || target >= items.length) return items;
       const updated = [...items];
       [updated[index], updated[target]] = [updated[target], updated[index]];
+      if (activeRoomId) {
+        const rows = [...roomQueueRows];
+        [rows[index], rows[target]] = [rows[target], rows[index]];
+        setRoomQueueRows(rows);
+        const supabase = createClient();
+        void Promise.all(rows.map((row, position) => supabase.from("room_queue").update({ position }).eq("id", row.id)));
+      }
       return updated;
     });
   };
@@ -262,6 +322,14 @@ export default function HomePage() {
                 ))}
               </div>
             </section>
+            <section className="section trending-section">
+              <div className="section-head"><h2>Hits Indonesia sekarang</h2><span>{homeUpdatedAt ? "Diperbarui " + homeUpdatedAt.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : homeLoading ? "Memuat..." : "YouTube Music Charts"}</span></div>
+              {homeLoading && !homeIndonesia.length ? <div className="loading-state"><Loader2 className="spin" /> Memuat lagu populer Indonesia...</div> : <div className="trending-grid">{homeIndonesia.slice(0,8).map((track,index)=><article className="trending-track" key={track.videoId}><button className="trending-play" onClick={()=>playTrack(track)}><img src={track.thumbnail} alt="" /><span>{index+1}</span></button><div className="trending-copy"><strong>{track.title}</strong><small>{track.channelTitle}</small></div><button className="icon-btn" onClick={()=>void addToQueue(track)} aria-label="Tambah ke antrean"><Plus size={18}/></button></article>)}</div>}
+            </section>
+            <section className="section trending-section">
+              <div className="section-head"><h2>Global hits</h2><span>Trending dunia</span></div>
+              {homeLoading && !homeGlobal.length ? <div className="loading-state"><Loader2 className="spin" /> Memuat global hits...</div> : <div className="trending-grid">{homeGlobal.slice(0,8).map((track,index)=><article className="trending-track" key={track.videoId}><button className="trending-play" onClick={()=>playTrack(track)}><img src={track.thumbnail} alt="" /><span>{index+1}</span></button><div className="trending-copy"><strong>{track.title}</strong><small>{track.channelTitle}</small></div><button className="icon-btn" onClick={()=>void addToQueue(track)} aria-label="Tambah ke antrean"><Plus size={18}/></button></article>)}</div>}
+            </section>
             <section className="section">
               <div className="section-head"><h2>Listening rooms</h2><span>Temukan teman dengar</span></div>
               <div className="room-grid">
@@ -336,7 +404,7 @@ export default function HomePage() {
 
       {showQueue && (
         <aside className="queue-panel">
-          <div className="queue-head"><div><strong>Antrean berikutnya</strong><small>{queue.length} lagu</small></div><button className="icon-btn" onClick={() => setShowQueue(false)} aria-label="Tutup antrean"><X /></button></div>
+          <div className="queue-head"><div><strong>Antrean berikutnya</strong><small>{queue.length} lagu{activeRoomId ? " · antrean room" : ""}</small></div><button className="icon-btn" onClick={() => setShowQueue(false)} aria-label="Tutup antrean"><X /></button></div>
           {queue.length === 0 ? <div className="queue-empty">Antrean masih kosong. Tambahkan lagu dari Explore.</div> : queue.map((track, index) => (
             <div className="queue-item" key={track.videoId}>
               <img src={track.thumbnail} alt="" />
