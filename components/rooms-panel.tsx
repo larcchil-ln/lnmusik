@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 type Room = { id: string; code: string; name: string; host_id: string; max_members: number; created_at: string };
 type Member = { user_id: string; display_name: string; joined_at: string };
 
+const ACTIVE_ROOM_STORAGE_KEY = "lnmusik-active-room-id";
+
 export default function RoomsPanel() {
   const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(null);
   const [userId, setUserId] = useState("");
@@ -35,13 +37,11 @@ export default function RoomsPanel() {
   }, [supabase]);
 
   useEffect(() => {
-    let alive = true;
     try {
       setSupabase(createClient());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Konfigurasi Supabase tidak valid.");
     }
-    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -67,6 +67,37 @@ export default function RoomsPanel() {
   }, [supabase]);
 
   useEffect(() => { if (userId) void loadRooms(); }, [userId, loadRooms]);
+
+  // RoomsPanel unmounts when the user switches tabs. Restore the room from
+  // local storage, but only if this anonymous user is still a member.
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let alive = true;
+    const restoreRoom = async () => {
+      const savedRoomId = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
+      if (!savedRoomId) return;
+      const [{ data: room, error: roomError }, { data: membership, error: membershipError }] = await Promise.all([
+        supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", savedRoomId).maybeSingle(),
+        supabase.from("room_members").select("room_id").eq("room_id", savedRoomId).eq("user_id", userId).maybeSingle()
+      ]);
+      if (!alive) return;
+      if (roomError || membershipError) {
+        setError(roomError?.message || membershipError?.message || "Gagal memulihkan room.");
+        return;
+      }
+      if (room && membership) {
+        setActiveRoom(room);
+        notifyRoomPlayback(room.id);
+        setMessage("Room sebelumnya berhasil dipulihkan.");
+      } else {
+        window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+        setActiveRoom(null);
+        notifyRoomPlayback(null);
+      }
+    };
+    void restoreRoom();
+    return () => { alive = false; };
+  }, [supabase, userId]);
 
   useEffect(() => {
     if (!activeRoom || !supabase) return;
@@ -97,7 +128,13 @@ export default function RoomsPanel() {
       const created = Array.isArray(data) ? data[0] : data;
       if (created?.room_id) {
         const { data: room } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", created.room_id).single();
-        if (room) { setActiveRoom(room); notifyRoomPlayback(room.id); setMessage("Room berhasil dibuat. Bagikan kode undangan ke temanmu."); setRoomName(""); }
+        if (room) {
+          window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, room.id);
+          setActiveRoom(room);
+          notifyRoomPlayback(room.id);
+          setMessage("Room berhasil dibuat. Bagikan kode undangan ke temanmu.");
+          setRoomName("");
+        }
       }
       await loadRooms();
     }
@@ -114,7 +151,13 @@ export default function RoomsPanel() {
     else if (joinedId) {
       const { data: room, error: roomError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("id", joinedId).single();
       if (roomError) setError(roomError.message);
-      else if (room) { setActiveRoom(room); notifyRoomPlayback(room.id); setMessage("Berhasil bergabung ke room."); setRoomCode(""); }
+      else if (room) {
+        window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, room.id);
+        setActiveRoom(room);
+        notifyRoomPlayback(room.id);
+        setMessage("Berhasil bergabung ke room.");
+        setRoomCode("");
+      }
     }
     setBusy(false);
   };
@@ -123,7 +166,14 @@ export default function RoomsPanel() {
     if (!activeRoom || !userId || !supabase) return;
     const { error: leaveError } = await supabase.from("room_members").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
     if (leaveError) setError(leaveError.message);
-    else { setActiveRoom(null); notifyRoomPlayback(null); setMembers([]); setMessage("Kamu sudah keluar dari room."); await loadRooms(); }
+    else {
+      window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      setActiveRoom(null);
+      notifyRoomPlayback(null);
+      setMembers([]);
+      setMessage("Kamu sudah keluar dari room.");
+      await loadRooms();
+    }
   };
 
   const copyCode = async () => {
