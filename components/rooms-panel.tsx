@@ -119,7 +119,21 @@ export default function RoomsPanel() {
     return () => { alive = false; };
   }, [supabase, userId]);
 
-  useEffect(() => {\n    if (!supabase || !activeRoom || !userId) return;\n    const touch = () => { void supabase.from("room_members").update({ last_seen_at: new Date().toISOString() }).eq("room_id", activeRoom.id).eq("user_id", userId); };\n    touch();\n    const timer = window.setInterval(touch, 30000);\n    const onVisible = () => { if (document.visibilityState === "visible") touch(); };\n    document.addEventListener("visibilitychange", onVisible);\n    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };\n  }, [supabase, activeRoom?.id, userId]);\n\n  const loadModeration = useCallback(async (roomId: string) => {
+  useEffect(() => {
+    if (!supabase || !activeRoom || !userId) return;
+    const touch = () => {
+      void supabase.from("room_members").update({ last_seen_at: new Date().toISOString() }).eq("room_id", activeRoom.id).eq("user_id", userId);
+    };
+    touch();
+    const timer = window.setInterval(touch, 30000);
+    const onVisible = () => { if (document.visibilityState === "visible") touch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [supabase, activeRoom?.id, userId]);
+
     if (!supabase) return;
     const [{ data: mods, error: modError }, { data: mutes, error: muteError }] = await Promise.all([
       supabase.from("room_moderators").select("room_id,user_id").eq("room_id", roomId),
