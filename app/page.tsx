@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import {
   AudioLines, Home, Compass, Radio, Library, Download, Search, Bell, Plus,
   Play, Pause, SkipBack, SkipForward, Heart, ListMusic, Headphones, Users,
@@ -44,6 +44,8 @@ export default function HomePage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [localAudioUrl, setLocalAudioUrl] = useState("");
   const [localAudioName, setLocalAudioName] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const searchYouTube = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -84,6 +86,19 @@ export default function HomePage() {
   const addToQueue = (track: Track) => {
     if (currentTrack?.videoId === track.videoId || queue.some((item) => item.videoId === track.videoId)) return;
     setQueue((items) => [...items, track]);
+  };
+
+  const togglePlayback = () => {
+    if (localAudioUrl && audioRef.current) {
+      if (audioRef.current.paused) void audioRef.current.play();
+      else audioRef.current.pause();
+      return;
+    }
+    if (currentTrack && iframeRef.current?.contentWindow) {
+      const func = isPlaying ? "pauseVideo" : "playVideo";
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
+      setIsPlaying(!isPlaying);
+    }
   };
 
   const playNext = () => {
@@ -255,11 +270,19 @@ export default function HomePage() {
               <p>Pilih file audio pribadi dari perangkat untuk diputar di browser ini. File tidak diunggah ke server.</p>
               <label className="primary-btn file-picker"><Plus size={15} /> Pilih file musik<input type="file" accept="audio/*" onChange={handleLocalFile} /></label>
               {localAudioName && <p className="local-file-name">Dipilih: {localAudioName}</p>}
-              {localAudioUrl && <audio className="local-audio" controls autoPlay src={localAudioUrl} />}
+              {localAudioUrl && <audio ref={audioRef} className="local-audio" controls autoPlay src={localAudioUrl} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />}
             </div>
           </section>
         )}
       </main>
+
+      {currentTrack && (
+        <aside className="mini-youtube">
+          <div className="mini-youtube-head"><span>NOW PLAYING · YOUTUBE</span><button className="icon-btn" onClick={() => { setCurrentTrack(null); setIsPlaying(false); }} aria-label="Tutup pemutar"><X size={15} /></button></div>
+          <iframe ref={iframeRef} key={currentTrack.videoId} title={currentTrack.title} width="240" height="200" src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=1&controls=1&rel=0&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`} allow="autoplay; encrypted-media; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" />
+          <div className="mini-youtube-title">{currentTrack.title}</div>
+        </aside>
+      )}
 
       {showQueue && (
         <aside className="queue-panel">
@@ -290,14 +313,13 @@ export default function HomePage() {
         </div>
         <div className="player-controls">
           <button className="icon-btn skip" aria-label="Sebelumnya" onClick={() => setIsPlaying(false)}><SkipBack size={17} /></button>
-          <button className="play-btn" aria-label={isPlaying ? "Pause" : "Play"} onClick={() => setIsPlaying(!isPlaying)}>{isPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button>
+          <button className="play-btn" aria-label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} disabled={!currentTrack && !localAudioUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button>
           <button className="icon-btn skip" aria-label="Berikutnya" onClick={playNext}><SkipForward size={17} /></button>
         </div>
         <div className="player-actions">
           <button className={`icon-btn ${showQueue ? "selected" : ""}`} onClick={() => setShowQueue(!showQueue)} aria-label="Buka antrean"><ListMusic size={19} /><span>{queue.length}</span></button>
         </div>
-        {currentTrack && <div className="mini-youtube"><iframe title={currentTrack.title} src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=1&controls=1&rel=0&playsinline=1`} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" /></div>}
-        {localAudioUrl && <audio src={localAudioUrl} autoPlay={isPlaying} controls className="hidden-audio" />}
+
       </div>
 
       <nav className="mobile-nav">
