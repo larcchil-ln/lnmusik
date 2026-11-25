@@ -105,3 +105,9 @@ $$;
 
 grant execute on function public.create_listening_room(text, text) to authenticated;
 grant execute on function public.join_listening_room(text, text) to authenticated;
+
+-- Restrict RPC execution to signed-in (including anonymous-auth) users.
+revoke all on function public.create_listening_room(text, text) from public, anon;
+revoke all on function public.join_listening_room(text, text) from public, anon;
+grant execute on function public.create_listening_room(text, text) to authenticated;
+grant execute on function public.join_listening_room(text, text) to authenticated;
