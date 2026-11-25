@@ -50,6 +50,9 @@ export default function HomePage() {
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeUpdatedAt, setHomeUpdatedAt] = useState<Date | null>(null);
   const [showQueue, setShowQueue] = useState(false);
+  const [showNowPlaying, setShowNowPlaying] = useState(false);
+  const [lyrics, setLyrics] = useState<string[]>([]);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const roomChannelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
@@ -141,6 +144,39 @@ export default function HomePage() {
     const interval = window.setInterval(() => { void loadTrending(); }, 10 * 60 * 1000);
     return () => { alive = false; window.clearInterval(interval); };
   }, []);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) { setResults([]); setSearchQuery(""); setIsSearching(false); return; }
+    const timer = window.setTimeout(async () => {
+      setIsSearching(true);
+      setSearchError("");
+      setSearchQuery(term);
+      try {
+        const response = await fetch(`/api/youtube/search?q=${encodeURIComponent(term)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Pencarian gagal.");
+        setResults(data.items ?? []);
+      } catch (error) {
+        setResults([]);
+        setSearchError(error instanceof Error ? error.message : "Terjadi kesalahan.");
+      } finally { setIsSearching(false); }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    if (!currentTrack) { setLyrics([]); return; }
+    let alive = true;
+    setLyricsLoading(true);
+    setLyrics([]);
+    const params = new URLSearchParams({ track: currentTrack.title, artist: currentTrack.channelTitle });
+    fetch(`/api/lyrics?${params.toString()}`).then(response => response.ok ? response.json() : null).then(data => {
+      if (!alive) return;
+      setLyrics(typeof data?.plainLyrics === "string" ? data.plainLyrics.split("\\n").filter(Boolean) : []);
+    }).catch(() => { if (alive) setLyrics([]); }).finally(() => { if (alive) setLyricsLoading(false); });
+    return () => { alive = false; };
+  }, [currentTrack?.videoId]);
 
   const searchYouTube = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -284,13 +320,20 @@ export default function HomePage() {
 
       <main className="main">
         {<header className="topbar">
-          <form className="searchbox" onSubmit={searchYouTube}>
+          <div className="search-area"><form className="searchbox" onSubmit={searchYouTube}>
             <Search size={17} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={activeRoomId ? "Cari lagu untuk diputar bareng..." : "Cari lagu, artis, album..."} aria-label="Cari musik di YouTube" />
             <button type="submit" className="search-submit" aria-label="Cari" disabled={isSearching}>
               {isSearching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
             </button>
           </form>
+          {activeRoomId && query.trim().length >= 2 && <div className="search-popover">
+            {isSearching && <div className="search-popover-status"><Loader2 size={14} className="spin" /> Mencari lagu...</div>}
+            {!isSearching && searchError && <div className="search-popover-status">{searchError}</div>}
+            {!isSearching && !searchError && results.length === 0 && <div className="search-popover-status">Tidak ada hasil untuk “{searchQuery}”.</div>}
+            {!isSearching && results.slice(0,5).map(track => <div className="search-suggestion" key={track.videoId}><button className="suggestion-main" onClick={() => { playTrack(track); setQuery(""); setResults([]); }}><img src={track.thumbnail} alt="" /><span><strong>{track.title}</strong><small>{track.channelTitle}</small></span></button><button className="icon-btn" aria-label="Tambah ke antrean" onClick={() => void addToQueue(track)}><Plus size={18}/></button></div>)}
+          </div>}
+          </div>
           {!activeRoomId && <div className="profile">
             <button className="icon-btn" aria-label="Notifikasi"><Bell size={18} /></button>
             <div className="avatar">L</div>
@@ -402,6 +445,8 @@ export default function HomePage() {
         </aside>
       )}
 
+      {showNowPlaying && currentTrack && <div className="now-playing-backdrop" onClick={() => setShowNowPlaying(false)}><section className="now-playing-modal" onClick={event => event.stopPropagation()}><div className="now-playing-head"><span>NOW PLAYING · LNMUSIK</span><button className="icon-btn" onClick={() => setShowNowPlaying(false)} aria-label="Tutup"><X/></button></div><div className="now-playing-video"><iframe title={currentTrack.title + " video"} src={`https://www.youtube-nocookie.com/embed/${currentTrack.videoId}?autoplay=0&controls=1&rel=0&playsinline=1`} allow="autoplay; encrypted-media; picture-in-picture" /></div><div className="now-playing-track"><img src={currentTrack.thumbnail} alt="" /><div><strong>{currentTrack.title}</strong><small>{currentTrack.channelTitle}</small></div></div><div className="now-playing-controls"><button className="icon-btn" onClick={playNext} aria-label="Lagu berikutnya"><SkipBack/></button><button className="play-btn" onClick={togglePlayback} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause/> : <Play fill="currentColor"/>}</button><button className="icon-btn" onClick={playNext} aria-label="Lagu berikutnya"><SkipForward/></button><button className={`icon-btn ${showQueue ? "selected" : ""}`} onClick={() => setShowQueue(value => !value)} aria-label="Buka antrean"><ListMusic/></button></div><div className="now-playing-lyrics"><div className="section-head"><h2>Lirik</h2><span>{lyricsLoading ? "Mencari lirik..." : lyrics.length ? "LRCLIB" : "Belum tersedia"}</span></div>{lyricsLoading ? <p className="muted">Sedang mencari lirik lagu...</p> : lyrics.length ? <div className="lyrics-lines">{lyrics.map((line,index)=><p key={index}>{line}</p>)}</div> : <p className="muted">Lirik untuk lagu ini belum ditemukan. Video tetap bisa dinikmati di atas.</p>}</div></section></div>}
+
       {showQueue && (
         <aside className="queue-panel">
           <div className="queue-head"><div><strong>Antrean berikutnya</strong><small>{queue.length} lagu{activeRoomId ? " · antrean room" : ""}</small></div><button className="icon-btn" onClick={() => setShowQueue(false)} aria-label="Tutup antrean"><X /></button></div>
@@ -421,14 +466,14 @@ export default function HomePage() {
       )}
 
       <div className="playerbar">
-        <div className="track-info">
+        <button className="track-info track-info-click" onClick={() => setShowNowPlaying(true)} aria-label="Buka pemutar lagu">
           <div className="track-cover">{currentTrack ? <img src={currentTrack.thumbnail} alt="" /> : <Music2 size={21} />}</div>
           <div className="track-meta">
             <strong>{localAudioName || currentTrack?.title || "Belum ada lagu diputar"}</strong>
             <small>{localAudioName ? "File lokal · perangkat ini" : currentTrack?.channelTitle || "Mulai jelajahi musik"}</small>
           </div>
-          <button className="icon-btn" aria-label="Sukai lagu"><Heart size={16} /></button>
-        </div>
+          <span className="icon-btn" aria-hidden="true"><Heart size={16} /></span>
+        </button>
         <div className="player-controls">
           <button className="icon-btn skip" aria-label="Sebelumnya" onClick={() => setIsPlaying(false)}><SkipBack size={17} /></button>
           <button className="play-btn" aria-label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} disabled={!currentTrack && !localAudioUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button>
