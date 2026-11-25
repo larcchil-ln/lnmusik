@@ -253,3 +253,19 @@ button { cursor: pointer; }
   .waiting-member { align-items:flex-start; flex-direction:column; gap:9px; }
   .moderation-actions { justify-content:flex-start; width:100%; }
 }
+
+
+/* Lounge message reactions and floating emotes */
+.message-reactions { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; }
+.message-reactions button { border:1px solid #303530; border-radius:99px; background:#111511; color:#aaa; padding:4px 7px; font-size:10px; cursor:pointer; }
+.message-reactions button.active { border-color:rgba(30,215,96,.55); background:rgba(30,215,96,.12); color:#c7f5d4; }
+.reaction-picker { display:flex; gap:2px; }
+.reaction-picker button { border:0; background:transparent; padding:3px; font-size:13px; opacity:.65; }
+.reaction-picker button:hover { opacity:1; transform:scale(1.15); }
+.floating-emote-layer { position:relative; height:0; pointer-events:none; z-index:3; }
+.floating-emote { position:absolute; right:8%; bottom:0; display:flex; align-items:center; gap:7px; padding:6px 10px; border:1px solid rgba(30,215,96,.22); border-radius:99px; background:rgba(15,22,17,.92); box-shadow:0 8px 25px rgba(0,0,0,.3); animation:lounge-float-up 2.8s ease-out forwards; }
+.floating-emote:nth-child(2n) { right:34%; animation-delay:.08s; }
+.floating-emote:nth-child(3n) { right:58%; animation-delay:.15s; }
+.floating-emote span { font-size:22px; }
+.floating-emote small { color:#d7e6da; font-size:10px; font-weight:700; }
+@keyframes lounge-float-up { 0% { opacity:0; transform:translateY(15px) scale(.85); } 12% { opacity:1; transform:translateY(0) scale(1); } 78% { opacity:1; } 100% { opacity:0; transform:translateY(-105px) scale(.92); } }
