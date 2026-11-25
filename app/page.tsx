@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import RoomsPanel from "@/components/rooms-panel";
 import {
   AudioLines, Home, Compass, Radio, Library, Download, Search, Bell, Plus,
   Play, Pause, SkipBack, SkipForward, Heart, ListMusic, Headphones, Users,
