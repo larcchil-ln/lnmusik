@@ -94,7 +94,7 @@ export default function RoomsPanel() {
       if (!savedRoomId) return;
       const [{ data: room, error: roomError }, { data: membership, error: membershipError }] = await Promise.all([
         supabase.from("rooms").select("id,code,name,host_id,max_members,is_public,created_at").eq("id", savedRoomId).maybeSingle(),
-        supabase.from("room_members").select("room_id").eq("room_id", savedRoomId).eq("user_id", userId).maybeSingle()
+        supabase.from("room_members").select("room_id").eq("room_id", savedRoomId).eq("user_id", userId).gte("last_seen_at", new Date(Date.now() - 90000).toISOString()).maybeSingle()
       ]);
       if (!alive) return;
       if (roomError || membershipError) {
