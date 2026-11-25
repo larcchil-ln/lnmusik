@@ -18,7 +18,8 @@ export default function RoomsPanel() {
   const [roomCode, setRoomCode] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);\n  const [seats, setSeats] = useState<Seat[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [seats, setSeats] = useState<Seat[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -30,7 +31,13 @@ export default function RoomsPanel() {
     else setRooms(data ?? []);
   }, [supabase]);
 
-  const loadSeats = useCallback(async (roomId: string) => {\n    if (!supabase) return;\n    const { data, error: seatError } = await supabase.from("room_seats").select("room_id,seat_number,user_id").eq("room_id", roomId).order("seat_number");\n    if (seatError) setError(seatError.message); else setSeats(data ?? []);\n  }, [supabase]);\n\n  const loadMembers = useCallback(async (roomId: string) => {
+  const loadSeats = useCallback(async (roomId: string) => {
+    if (!supabase) return;
+    const { data, error: seatError } = await supabase.from("room_seats").select("room_id,seat_number,user_id").eq("room_id", roomId).order("seat_number");
+    if (seatError) setError(seatError.message); else setSeats(data ?? []);
+  }, [supabase]);
+
+  const loadMembers = useCallback(async (roomId: string) => {
     if (!supabase) return;
     const { data, error: memberError } = await supabase.from("room_members").select("user_id,display_name,joined_at").eq("room_id", roomId).order("joined_at");
     if (memberError) setError(memberError.message);
@@ -163,9 +170,28 @@ export default function RoomsPanel() {
     setBusy(false);
   };
 
-  const takeSeat = async (seatNumber: number) => {\n    if (!activeRoom || !supabase || !userId) return;\n    setError("");\n    const { error: clearError } = await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);\n    if (clearError) { setError(clearError.message); return; }\n    const { error: seatError } = await supabase.from("room_seats").insert({ room_id: activeRoom.id, seat_number: seatNumber, user_id: userId });\n    if (seatError) setError(seatError.code === "23505" ? "Kursi itu baru saja ditempati. Pilih kursi lain." : seatError.message);\n    else setMessage(`Kamu duduk di kursi ${seatNumber}.`);\n    await loadSeats(activeRoom.id);\n  };\n\n  const standUp = async () => {\n    if (!activeRoom || !supabase || !userId) return;\n    const { error: seatError } = await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);\n    if (seatError) setError(seatError.message); else setMessage("Kamu berdiri dari kursi.");\n    await loadSeats(activeRoom.id);\n  };\n\n  const leaveRoom = async () => {
+  const takeSeat = async (seatNumber: number) => {
+    if (!activeRoom || !supabase || !userId) return;
+    setError("");
+    const { error: clearError } = await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
+    if (clearError) { setError(clearError.message); return; }
+    const { error: seatError } = await supabase.from("room_seats").insert({ room_id: activeRoom.id, seat_number: seatNumber, user_id: userId });
+    if (seatError) setError(seatError.code === "23505" ? "Kursi itu baru saja ditempati. Pilih kursi lain." : seatError.message);
+    else setMessage(`Kamu duduk di kursi ${seatNumber}.`);
+    await loadSeats(activeRoom.id);
+  };
+
+  const standUp = async () => {
+    if (!activeRoom || !supabase || !userId) return;
+    const { error: seatError } = await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
+    if (seatError) setError(seatError.message); else setMessage("Kamu berdiri dari kursi.");
+    await loadSeats(activeRoom.id);
+  };
+
+  const leaveRoom = async () => {
     if (!activeRoom || !userId || !supabase) return;
-    await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);\n    const { error: leaveError } = await supabase.from("room_members").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
+    await supabase.from("room_seats").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
+    const { error: leaveError } = await supabase.from("room_members").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
     if (leaveError) setError(leaveError.message);
     else {
       window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
@@ -207,7 +233,8 @@ export default function RoomsPanel() {
       <div className="room-top"><span className="live">● ROOM AKTIF</span><button className="join-btn" onClick={leaveRoom}><DoorOpen size={13} /> Keluar</button></div>
       <h3>{activeRoom.name}</h3><p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button></p>
       <div className="member-heading"><Users size={15} /> Anggota ({members.length}/{activeRoom.max_members})</div>
-      <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : null}</div>)}\n      <div className="lounge-seats"><div className="lounge-seats-head"><strong>Tempat duduk</strong><span>{seats.length}/10 terisi</span></div><div className="seat-grid">{Array.from({ length: 10 }, (_, index) => { const number = index + 1; const seat = seats.find(item => item.seat_number === number); const person = members.find(item => item.user_id === seat?.user_id); const mine = seat?.user_id === userId; return <button type="button" key={number} className={`seat-tile ${seat ? "occupied" : "empty"} ${mine ? "mine" : ""}`} disabled={!!seat && !mine} onClick={() => mine ? void standUp() : void takeSeat(number)}><span className="seat-emoji">{seat ? (mine ? "😎" : "🎧") : "＋"}</span><strong>{seat ? (person?.display_name || "Listener") : "Kursi kosong"}</strong><small>{seat ? (mine ? "Kamu · berdiri" : `Kursi ${number}`) : `Kursi ${number} · pilih`}</small></button>; })}</div><p className="seat-hint">Pilih kursi kosong untuk duduk. Tekan kursimu lagi untuk berdiri.</p></div></div>
+      <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : null}</div>)}
+      <div className="lounge-seats"><div className="lounge-seats-head"><strong>Tempat duduk</strong><span>{seats.length}/10 terisi</span></div><div className="seat-grid">{Array.from({ length: 10 }, (_, index) => { const number = index + 1; const seat = seats.find(item => item.seat_number === number); const person = members.find(item => item.user_id === seat?.user_id); const mine = seat?.user_id === userId; return <button type="button" key={number} className={`seat-tile ${seat ? "occupied" : "empty"} ${mine ? "mine" : ""}`} disabled={!!seat && !mine} onClick={() => mine ? void standUp() : void takeSeat(number)}><span className="seat-emoji">{seat ? (mine ? "😎" : "🎧") : "＋"}</span><strong>{seat ? (person?.display_name || "Listener") : "Kursi kosong"}</strong><small>{seat ? (mine ? "Kamu · berdiri" : `Kursi ${number}`) : `Kursi ${number} · pilih`}</small></button>; })}</div><p className="seat-hint">Pilih kursi kosong untuk duduk. Tekan kursimu lagi untuk berdiri.</p></div></div>
     </div>}
     <div className="section-head room-list-heading"><h2>Room publik</h2><span>{rooms.length} room ditemukan</span></div>
     {rooms.length ? <div className="room-grid">{rooms.map(room => <article className="room-card" key={room.id}><div className="room-top"><span className="live">● TERSEDIA</span><Radio size={16} /></div><h3>{room.name}</h3><p>Kode: {room.code}</p><div className="room-foot"><span><Users size={13} /> Room publik</span><button className="join-btn" disabled={busy || room.id === activeRoom?.id} onClick={() => setRoomCode(room.code)}>Pakai kode</button></div></article>)}</div> : <div className="empty-state"><div className="empty-icon"><Radio /></div><h3>Belum ada room publik</h3><p>Buat room pertama dan undang temanmu dengan kode room.</p></div>}
