@@ -30,7 +30,11 @@ begin
 end;
 $$;
 
-drop policy if exists "Users heartbeat own room membership" on public.room_members;\ncreate policy "Users heartbeat own room membership" on public.room_members\nfor update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());\n\ngrant execute on function public.cleanup_stale_room_members() to authenticated;
+drop policy if exists "Users heartbeat own room membership" on public.room_members;
+create policy "Users heartbeat own room membership" on public.room_members
+for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+grant execute on function public.cleanup_stale_room_members() to authenticated;
 grant update (last_seen_at) on public.room_members to authenticated;
 
 create or replace function public.get_active_public_room_ids()
