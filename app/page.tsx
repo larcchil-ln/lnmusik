@@ -183,7 +183,6 @@ export default function HomePage() {
     fetch(`/api/lyrics?${params.toString()}`).then(response => response.ok ? response.json() : null).then(data => {
       if (!alive) return;
       setLyrics(typeof data?.plainLyrics === "string" ? data.plainLyrics.split("\n").filter(Boolean) : []);
-").filter(Boolean) : []);
     }).catch(() => { if (alive) setLyrics([]); }).finally(() => { if (alive) setLyricsLoading(false); });
     return () => { alive = false; };
   }, [currentTrack?.videoId]);
