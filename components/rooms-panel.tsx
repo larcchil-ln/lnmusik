@@ -148,7 +148,17 @@ export default function RoomsPanel() {
     void loadSeats(activeRoom.id);
     void loadModeration(activeRoom.id);
     const channel = supabase.channel(`room-lounge-${activeRoom.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadMembers(activeRoom.id); void loadRooms(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, (payload) => {
+        void loadMembers(activeRoom.id);
+        void loadRooms();
+        const removed = payload.eventType === "DELETE" ? payload.old as { user_id?: string } : null;
+        if (removed?.user_id === userId) {
+          window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+          setActiveRoom(null);
+          notifyRoomPlayback(null);
+          setMessage("Kamu dikeluarkan dari room oleh pengelola.");
+        }
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_seats", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadSeats(activeRoom.id); })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_moderators", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadModeration(activeRoom.id); })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_chat_mutes", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadModeration(activeRoom.id); })
