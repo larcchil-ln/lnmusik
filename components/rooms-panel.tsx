@@ -8,7 +8,7 @@ type Room = { id: string; code: string; name: string; host_id: string; max_membe
 type Member = { user_id: string; display_name: string; joined_at: string };
 
 export default function RoomsPanel() {
-  const [supabase] = useState(() => createClient());
+  const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(null);
   const [userId, setUserId] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [roomName, setRoomName] = useState("");
@@ -21,18 +21,31 @@ export default function RoomsPanel() {
   const [message, setMessage] = useState("");
 
   const loadRooms = useCallback(async () => {
+    if (!supabase) return;
     const { data, error: loadError } = await supabase.from("rooms").select("id,code,name,host_id,max_members,created_at").eq("is_public", true).order("created_at", { ascending: false }).limit(30);
     if (loadError) setError(loadError.message);
     else setRooms(data ?? []);
   }, [supabase]);
 
   const loadMembers = useCallback(async (roomId: string) => {
+    if (!supabase) return;
     const { data, error: memberError } = await supabase.from("room_members").select("user_id,display_name,joined_at").eq("room_id", roomId).order("joined_at");
     if (memberError) setError(memberError.message);
     else setMembers(data ?? []);
   }, [supabase]);
 
   useEffect(() => {
+    let alive = true;
+    try {
+      setSupabase(createClient());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Konfigurasi Supabase tidak valid.");
+    }
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
     let alive = true;
     const start = async () => {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -56,7 +69,7 @@ export default function RoomsPanel() {
   useEffect(() => { if (userId) void loadRooms(); }, [userId, loadRooms]);
 
   useEffect(() => {
-    if (!activeRoom) return;
+    if (!activeRoom || !supabase) return;
     void loadMembers(activeRoom.id);
     const channel = supabase.channel(`room-members-${activeRoom.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadMembers(activeRoom.id); void loadRooms(); })
@@ -72,6 +85,7 @@ export default function RoomsPanel() {
   const createRoom = async (event: FormEvent) => {
     event.preventDefault();
     if (!displayName.trim() || !roomName.trim()) { setError("Isi nama Listener dan nama room."); return; }
+    if (!supabase) { setError("Koneksi Supabase belum siap."); return; }
     setBusy(true); setError(""); setMessage("");
     const { data, error: rpcError } = await supabase.rpc("create_listening_room", { room_name: roomName.trim(), listener_name: displayName.trim() });
     if (rpcError) setError(rpcError.message);
@@ -89,6 +103,7 @@ export default function RoomsPanel() {
   const joinRoom = async (event: FormEvent) => {
     event.preventDefault();
     if (!displayName.trim() || !roomCode.trim()) { setError("Isi nama Listener dan kode room."); return; }
+    if (!supabase) { setError("Koneksi Supabase belum siap."); return; }
     setBusy(true); setError(""); setMessage("");
     const { data: joinedId, error: rpcError } = await supabase.rpc("join_listening_room", { room_code: roomCode.trim(), listener_name: displayName.trim() });
     if (rpcError) setError(rpcError.message);
@@ -101,7 +116,7 @@ export default function RoomsPanel() {
   };
 
   const leaveRoom = async () => {
-    if (!activeRoom || !userId) return;
+    if (!activeRoom || !userId || !supabase) return;
     const { error: leaveError } = await supabase.from("room_members").delete().eq("room_id", activeRoom.id).eq("user_id", userId);
     if (leaveError) setError(leaveError.message);
     else { setActiveRoom(null); setMembers([]); setMessage("Kamu sudah keluar dari room."); await loadRooms(); }
@@ -113,7 +128,7 @@ export default function RoomsPanel() {
     catch { setMessage(`Kode room: ${activeRoom.code}`); }
   };
 
-  if (!userId) return <section className="section"><div className="loading-state"><Loader2 className="spin" /> Menghubungkan Listener ke Supabase...</div>{error && <div className="notice">{error}</div>}</section>;
+  if (!supabase || !userId) return <section className="section"><div className="loading-state"><Loader2 className="spin" /> Menghubungkan Listener ke Supabase...</div>{error && <div className="notice">{error}</div>}</section>;
 
   return <section className="section">
     <div className="section-head"><h2>Listening rooms</h2><span>Maksimal 10 orang per room</span></div>
