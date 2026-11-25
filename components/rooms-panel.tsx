@@ -8,6 +8,7 @@ import RoomChat from "@/components/room-chat";
 type Room = { id: string; code: string; name: string; host_id: string; max_members: number; created_at: string };
 type Member = { user_id: string; display_name: string; joined_at: string };
 type Seat = { room_id: string; seat_number: number; user_id: string };
+type Moderator = { room_id: string; user_id: string };
 
 const ACTIVE_ROOM_STORAGE_KEY = "lnmusik-active-room-id";
 
@@ -21,6 +22,8 @@ export default function RoomsPanel() {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [seats, setSeats] = useState<Seat[]>([]);
+  const [moderators, setModerators] = useState<Moderator[]>([]);
+  const [mutedIds, setMutedIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -108,16 +111,50 @@ export default function RoomsPanel() {
     return () => { alive = false; };
   }, [supabase, userId]);
 
+  const loadModeration = useCallback(async (roomId: string) => {
+    if (!supabase) return;
+    const [{ data: mods, error: modError }, { data: mutes, error: muteError }] = await Promise.all([
+      supabase.from("room_moderators").select("room_id,user_id").eq("room_id", roomId),
+      supabase.from("room_chat_mutes").select("user_id").eq("room_id", roomId)
+    ]);
+    if (modError || muteError) setError(modError?.message || muteError?.message || "Gagal memuat status moderasi.");
+    else { setModerators(mods ?? []); setMutedIds((mutes ?? []).map(item => item.user_id)); }
+  }, [supabase]);
+
+  const manageModerator = async (memberId: string, makeModerator: boolean) => {
+    if (!activeRoom || !supabase || userId !== activeRoom.host_id) return;
+    setError("");
+    const { error: actionError } = await supabase.rpc("set_room_moderator", { p_room_id: activeRoom.id, p_user_id: memberId, p_make_moderator: makeModerator });
+    if (actionError) setError(actionError.message);
+    else setMessage(makeModerator ? "Moderator berhasil diangkat." : "Jabatan moderator dicopot.");
+    await loadModeration(activeRoom.id);
+  };
+
+  const moderateMember = async (memberId: string, action: "mute" | "unmute" | "kick") => {
+    if (!activeRoom || !supabase) return;
+    const person = members.find(member => member.user_id === memberId);
+    const actionLabel = action === "kick" ? "dikeluarkan" : action === "mute" ? "dibisukan" : "mute dibuka";
+    if (action === "kick" && !window.confirm(`Keluarkan ${person?.display_name || "anggota"} dari room?`)) return;
+    setError("");
+    const { error: actionError } = await supabase.rpc("moderate_room_member", { p_room_id: activeRoom.id, p_user_id: memberId, p_action: action });
+    if (actionError) setError(actionError.message);
+    else setMessage(`${person?.display_name || "Anggota"} berhasil ${actionLabel}.`);
+    await Promise.all([loadMembers(activeRoom.id), loadSeats(activeRoom.id), loadModeration(activeRoom.id)]);
+  };
+
   useEffect(() => {
     if (!activeRoom || !supabase) return;
     void loadMembers(activeRoom.id);
     void loadSeats(activeRoom.id);
+    void loadModeration(activeRoom.id);
     const channel = supabase.channel(`room-lounge-${activeRoom.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadMembers(activeRoom.id); void loadRooms(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "room_seats", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadSeats(activeRoom.id); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_moderators", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadModeration(activeRoom.id); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_chat_mutes", filter: `room_id=eq.${activeRoom.id}` }, () => { void loadModeration(activeRoom.id); })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [activeRoom, loadMembers, loadRooms, loadSeats, supabase]);
+  }, [activeRoom, loadMembers, loadModeration, loadRooms, loadSeats, supabase]);
 
   const notifyRoomPlayback = (roomId: string | null) => {
     window.dispatchEvent(new CustomEvent("lnmusik:room", { detail: { roomId } }));
@@ -228,6 +265,9 @@ export default function RoomsPanel() {
 
   if (activeRoom) {
     const isHost = userId === activeRoom.host_id;
+    const isModerator = moderators.some(item => item.user_id === userId);
+    const isStaff = isHost || isModerator;
+    const isMuted = mutedIds.includes(userId);
     const seatedIds = new Set(seats.map(seat => seat.user_id));
     const waitingMembers = members.filter(member => !seatedIds.has(member.user_id));
     return <section className="section lounge-page">
@@ -238,7 +278,22 @@ export default function RoomsPanel() {
         <h3>{activeRoom.name}</h3>
         <p>Kode undangan: <strong className="room-code">{activeRoom.code}</strong> <button className="copy-code" onClick={copyCode}><Copy size={13} /> Salin</button></p>
         <div className="member-heading"><Users size={15} /> Anggota ({members.length}/{activeRoom.max_members})</div>
-        <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : null}</div>)}</div>
+        <div className="member-list">{members.map(member => <div className="member-chip" key={member.user_id}><span className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? <small>HOST</small> : moderators.some(item => item.user_id === member.user_id) ? <small>MOD</small> : null}</div>)}</div>
+        {(isHost || isStaff) && <div className="waiting-members">
+          <div className="lounge-seats-head"><strong>Panel pengelola</strong><span>{isHost ? "HOST" : "MODERATOR"}</span></div>
+          <div className="waiting-list">{members.filter(member => member.user_id !== activeRoom.host_id && (isHost || !moderators.some(mod => mod.user_id === member.user_id))).map(member => {
+            const isMod = moderators.some(mod => mod.user_id === member.user_id);
+            const memberMuted = mutedIds.includes(member.user_id);
+            return <div className="waiting-member" key={member.user_id}>
+              <span>{member.display_name}{isMod ? " · Moderator" : ""}{memberMuted ? " · Dibisukan" : ""}</span>
+              <div className="moderation-actions">
+                {isHost && <button className="join-btn" onClick={() => void manageModerator(member.user_id, !isMod)}>{isMod ? "Copot MOD" : "Jadikan MOD"}</button>}
+                <button className="join-btn" onClick={() => void moderateMember(member.user_id, memberMuted ? "unmute" : "mute")}>{memberMuted ? "Buka mute" : "Mute"}</button>
+                <button className="join-btn" onClick={() => void moderateMember(member.user_id, "kick")}>Keluarkan</button>
+              </div>
+            </div>;
+          })}</div>
+        </div>}
         <div className="lounge-seats">
           <div className="lounge-seats-head"><strong>Tempat duduk</strong><span>{seats.length}/10 terisi</span></div>
           <div className="seat-grid">{Array.from({ length: 10 }, (_, index) => {
@@ -259,7 +314,7 @@ export default function RoomsPanel() {
           {waitingMembers.length ? <div className="waiting-list">{waitingMembers.map(member => <div className="waiting-member" key={member.user_id}><span><i className="member-dot" />{member.display_name}{member.user_id === activeRoom.host_id ? " · Host" : ""}</span><button className="join-btn" disabled={seats.length >= 10 || member.user_id === userId} onClick={() => void hostSeatMember(member.user_id)}>Naikkan ke kursi</button></div>)}</div> : <p className="seat-hint">Semua anggota sudah mendapat kursi.</p>}
         </div>}
       </div>
-      <RoomChat roomId={activeRoom.id} userId={userId} displayName={displayName} />
+      <RoomChat roomId={activeRoom.id} userId={userId} displayName={displayName} isStaff={isStaff} isMuted={isMuted} />
     </section>;
   }
 
