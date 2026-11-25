@@ -269,3 +269,8 @@ button { cursor: pointer; }
 .floating-emote span { font-size:22px; }
 .floating-emote small { color:#d7e6da; font-size:10px; font-weight:700; }
 @keyframes lounge-float-up { 0% { opacity:0; transform:translateY(15px) scale(.85); } 12% { opacity:1; transform:translateY(0) scale(1); } 78% { opacity:1; } 100% { opacity:0; transform:translateY(-105px) scale(.92); } }
+
+
+/* Host room settings */
+.room-head-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.room-visibility{margin-left:4px;color:#91c99f;font-size:10px}.room-settings{display:grid;gap:12px;margin-top:18px;padding:16px;border:1px solid rgba(30,215,96,.2);border-radius:13px;background:rgba(15,25,17,.72)}.room-settings>label{display:grid;gap:6px;color:#aaa;font-size:10px}.room-settings input,.room-settings select{width:100%;min-width:0;padding:11px 12px;border:1px solid #303830;border-radius:9px;background:#090d0a;color:#eee;font:inherit;font-size:12px;outline:none}.room-settings input:focus,.room-settings select:focus{border-color:var(--green)}.room-settings-actions{display:flex;justify-content:flex-end;gap:8px;align-items:center}.room-settings-actions .primary-btn{cursor:pointer}.room-settings-actions button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:480px){.room-head-actions{justify-content:flex-end}.room-top{align-items:flex-start;gap:8px}.room-settings{padding:13px}}
