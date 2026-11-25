@@ -243,15 +243,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {activeTab === "Rooms" && (
-          <section className="section">
-            <div className="section-head"><h2>Active listening rooms</h2><span>Maksimal 10 orang per room</span></div>
-            <div className="notice">Fitur room realtime sedang disiapkan. Daftar ini masih berupa contoh tampilan, belum room aktif sungguhan.</div>
-            <div className="room-grid">
-              {rooms.map((room) => <article className="room-card" key={room.title}><div className="room-top"><span className="live">● PREVIEW</span><Radio size={16} /></div><h3>{room.title}</h3><p>Host: {room.host} · {room.song}</p><div className="room-foot"><span><Users size={13} style={{ verticalAlign: "middle", marginRight: 5 }} />{room.members} anggota</span><button className="join-btn" disabled>Segera hadir</button></div></article>)}
-            </div>
-          </section>
-        )}
+        {activeTab === "Rooms" && <RoomsPanel />}
 
         {activeTab === "Library" && (
           <section className="section">
