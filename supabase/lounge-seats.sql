@@ -17,16 +17,32 @@ for select to authenticated using (
 );
 
 drop policy if exists "Members take own empty seat" on public.room_seats;
-create policy "Members take own empty seat" on public.room_seats
+drop policy if exists "Members and host assign seats" on public.room_seats;
+create policy "Members and host assign seats" on public.room_seats
 for insert to authenticated with check (
-  user_id=auth.uid() and exists (
-    select 1 from public.room_members m where m.room_id=room_seats.room_id and m.user_id=auth.uid()
+  exists (
+    select 1 from public.room_members m
+    where m.room_id=room_seats.room_id and m.user_id=room_seats.user_id
+  )
+  and (
+    user_id=auth.uid()
+    or exists (
+      select 1 from public.rooms r
+      where r.id=room_seats.room_id and r.host_id=auth.uid()
+    )
   )
 );
 
 drop policy if exists "Members move or leave own seat" on public.room_seats;
-create policy "Members move or leave own seat" on public.room_seats
-for delete to authenticated using (user_id=auth.uid());
+drop policy if exists "Members and host manage seats" on public.room_seats;
+create policy "Members and host manage seats" on public.room_seats
+for delete to authenticated using (
+  user_id=auth.uid()
+  or exists (
+    select 1 from public.rooms r
+    where r.id=room_seats.room_id and r.host_id=auth.uid()
+  )
+);
 
 grant select, insert, delete on public.room_seats to authenticated;
 
